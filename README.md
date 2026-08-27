@@ -39,8 +39,8 @@
 
 ```
 data/raw/      выданные данные (вне гита)
-docs/          разбор данных, стратегия, замеры
-src/sverka/   парсер, детекторы, метрики
+docs/          ТЗ дословно, разбор данных, стратегия, замеры
+src/sverka/    парсер, детекторы, метрики
 scripts/       predict.py — точка входа для платформы
 tests/
 ```
@@ -58,5 +58,7 @@ tests/
 | inc-4 | сборка каскада и бюджет времени | — |
 | inc-5 | калибровка порога и дисциплина сабмитов | — |
 
-Разбор данных — [`docs/data-findings.md`](docs/data-findings.md),
-обоснование подхода — [`docs/strategy.md`](docs/strategy.md).
+ТЗ дословно — [`docs/task-spec.md`](docs/task-spec.md),
+разбор данных — [`docs/data-findings.md`](docs/data-findings.md),
+обоснование подхода — [`docs/strategy.md`](docs/strategy.md),
+замеры бейзлайнов — [`docs/baselines.md`](docs/baselines.md).
