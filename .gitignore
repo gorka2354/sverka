@@ -1,0 +1,22 @@
+# данные соревнования — не публикуем
+data/
+# веса и артефакты
+model/
+out/
+*.parquet
+*.csv
+!tests/fixtures/*.csv
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+# submission archives
+submissions/
+*.tar.gz
+*.zip
