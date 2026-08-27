@@ -13,8 +13,8 @@ import argparse
 import re
 from collections import Counter
 
-from poverka.data import load_examples
-from poverka.transcript import parse_response, parse_transcript
+from sverka.data import load_examples
+from sverka.transcript import parse_response, parse_transcript
 
 LB, RB = "⟦", "⟧"
 

@@ -11,7 +11,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from poverka.data import Example
+from sverka.data import Example
 
 
 @dataclass(frozen=True)

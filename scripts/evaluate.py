@@ -15,9 +15,9 @@ import argparse
 import sys
 import time
 
-from poverka.data import Example, load_examples
-from poverka.detectors import ConstantDetector, RandomDetector, ResponseLengthDetector
-from poverka.metrics import bootstrap_f1_grouped, score
+from sverka.data import Example, load_examples
+from sverka.detectors import ConstantDetector, RandomDetector, ResponseLengthDetector
+from sverka.metrics import bootstrap_f1_grouped, score
 
 DETECTORS = {
     "constant1": lambda: ConstantDetector(value=1),

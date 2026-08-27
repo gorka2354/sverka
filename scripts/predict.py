@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from poverka.data import load_examples
-from poverka.detectors import ConstantDetector
+from sverka.data import load_examples
+from sverka.detectors import ConstantDetector
 
 # Метка, которую ставим примеру, если детектор упал на нём.
 # 1, а не 0: при балансе 50/50 ложноположительное стоит F1 дешевле, чем пропуск.
@@ -53,7 +53,7 @@ def main() -> int:
 
     t0 = time.perf_counter()
     examples = load_examples(args.input)
-    print(f"[poverka] загружено примеров: {len(examples)}", file=sys.stderr)
+    print(f"[sverka] загружено примеров: {len(examples)}", file=sys.stderr)
 
     detector = build_detector(args.detector)
 
@@ -66,7 +66,7 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001 — падать нельзя, см. инвариант 1
             failures += 1
             label = FALLBACK_LABEL
-            print(f"[poverka] ОШИБКА на {ex.id}: {type(e).__name__}: {e}", file=sys.stderr)
+            print(f"[sverka] ОШИБКА на {ex.id}: {type(e).__name__}: {e}", file=sys.stderr)
         rows.append({"id": ex.id, "label": label})
 
     out_path = Path(args.output)
@@ -76,13 +76,13 @@ def main() -> int:
     dt = time.perf_counter() - t0
     per = dt / len(examples) if examples else 0.0
     print(
-        f"[poverka] готово за {dt:.1f} c ({per*1000:.0f} мс/пример), "
+        f"[sverka] готово за {dt:.1f} c ({per*1000:.0f} мс/пример), "
         f"неразобранных: {failures}, записано: {len(rows)} → {out_path}",
         file=sys.stderr,
     )
     if failures:
         print(
-            f"[poverka] ВНИМАНИЕ: {failures} примеров получили запасную метку {FALLBACK_LABEL}",
+            f"[sverka] ВНИМАНИЕ: {failures} примеров получили запасную метку {FALLBACK_LABEL}",
             file=sys.stderr,
         )
     return 0

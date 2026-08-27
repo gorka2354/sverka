@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from poverka.data import Example, load_examples, split_by_conversation
-from poverka.transcript import TranscriptError, parse_response, parse_transcript
+from sverka.data import Example, load_examples, split_by_conversation
+from sverka.transcript import TranscriptError, parse_response, parse_transcript
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "raw" / "valid.parquet"
 pytestmark = pytest.mark.skipif(not DATA.exists(), reason="нет data/raw/valid.parquet")
