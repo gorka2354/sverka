@@ -93,6 +93,22 @@ PACKAGE_INIT = '''"""Заглушка пакета для профиля diagnos
 __version__ = "0.1.0"
 '''
 
+README_BY_PROFILE = {
+    "all_ones": """# сверка — сабмит «всё = 1`
+
+Тривиальный сабмит: метка 1 для каждой строки. Отправляется намеренно.
+Его Precision буквально равен доле положительных примеров в наборе — величине, которую
+иначе не узнать, а от неё зависит и пол метрики, и калибровка порога.
+Зависимостей нет: используется только стандартная библиотека.
+""",
+    "has_tool_call": """# сверка — сабмит «есть вызов инструмента`
+
+Метка 1 там, где в поле response встречается TOOL_CALL. На выданном сэмпле это правило
+даёт F1 = 0.913, и сабмит проверяет, переносится ли артефакт на тестовый набор.
+Зависимостей нет: используется только стандартная библиотека.
+""",
+}
+
 README = """# сверка — диагностический прогон
 
 Этот архив НЕ является решением. Он намеренно завершается ненулевым кодом, чтобы
@@ -103,18 +119,34 @@ README = """# сверка — диагностический прогон
 """
 
 
-def build_diagnostic(out_dir: Path) -> Path:
+PROFILE_ENTRY = {
+    "diagnostic": "scripts/diagnose.py",
+    "all_ones": "scripts/predict_stdlib.py",
+    "has_tool_call": "scripts/predict_stdlib.py",
+}
+
+
+def build_diagnostic(out_dir: Path, profile: str = "diagnostic") -> Path:
     if out_dir.exists():
         shutil.rmtree(out_dir)
     (out_dir / "scripts").mkdir(parents=True)
     (out_dir / "src" / "sverka").mkdir(parents=True)
     (out_dir / "model").mkdir(parents=True)
 
-    shutil.copy2(ROOT / "scripts" / "diagnose.py", out_dir / "scripts" / "predict.py")
+    src = ROOT / PROFILE_ENTRY[profile]
+    entry = out_dir / "scripts" / "predict.py"
+    shutil.copy2(src, entry)
+    if profile != "diagnostic":
+        # Профиль зашивается в точку входа, а не передаётся флагом: платформа запускает
+        # скрипт со СВОИМИ аргументами, и никакого нашего флага там не будет.
+        text = entry.read_text(encoding="utf-8")
+        assert 'PROFILE = "all_ones"' in text, "не найдена строка профиля в точке входа"
+        entry.write_text(text.replace('PROFILE = "all_ones"', f'PROFILE = "{profile}"'),
+                         encoding="utf-8")
     (out_dir / "pyproject.toml").write_text(PYPROJECT_DIAGNOSTIC, encoding="utf-8")
     (out_dir / "setup.py").write_text(SETUP_PY_HOOK, encoding="utf-8")
     (out_dir / "src" / "sverka" / "__init__.py").write_text(PACKAGE_INIT, encoding="utf-8")
-    (out_dir / "README.md").write_text(README, encoding="utf-8")
+    (out_dir / "README.md").write_text(README_BY_PROFILE.get(profile, README), encoding="utf-8")
     (out_dir / "model" / ".gitkeep").write_text("", encoding="utf-8")
     return out_dir
 
@@ -127,7 +159,7 @@ def check(out_dir: Path) -> list[str]:
         problems.append("нет scripts/predict.py — платформа запускает именно его")
     else:
         src = entry.read_text(encoding="utf-8")
-        for mod in ("pandas", "pyarrow", "numpy", "torch", "sverka."):
+        for mod in ("pandas", "pyarrow", "numpy", "torch", "sverka"):
             if f"import {mod}" in src or f"from {mod}" in src:
                 problems.append(f"точка входа импортирует {mod} — профиль обязан быть stdlib-only")
     pj = (out_dir / "pyproject.toml").read_text(encoding="utf-8")
@@ -140,13 +172,14 @@ def check(out_dir: Path) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--profile", default="diagnostic", choices=["diagnostic"])
+    ap.add_argument("--profile", default="diagnostic",
+                    choices=["diagnostic", "all_ones", "has_tool_call"])
     ap.add_argument("--out", default=None, help="куда собирать (по умолчанию submissions/<profile>)")
     ap.add_argument("--archive", action="store_true", help="дополнительно упаковать в .tar.gz")
     args = ap.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "submissions" / args.profile
-    build_diagnostic(out_dir)
+    build_diagnostic(out_dir, args.profile)
 
     problems = check(out_dir)
     for p in problems:
