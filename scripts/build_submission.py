@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import shutil
 import tarfile
 import zipfile
@@ -218,10 +219,27 @@ def check(out_dir: Path) -> list[str]:
             return []  # отрицательный контроль: отсутствие точки входа здесь намеренное
         problems.append("нет scripts/predict.py — платформа запускает именно его")
     else:
-        src = entry.read_text(encoding="utf-8")
-        for mod in ("pandas", "pyarrow", "numpy", "torch", "sverka"):
-            if f"import {mod}" in src or f"from {mod}" in src:
-                problems.append(f"точка входа импортирует {mod} — профиль обязан быть stdlib-only")
+        # Проверяются только импорты ВЕРХНЕГО УРОВНЯ. Ленивый импорт внутри функции
+        # разрешён и нужен: если платформа передаст parquet вместо CSV, мы попробуем
+        # взять pandas из окружения. Опасен именно импорт на уровне модуля — он
+        # выполняется при запуске и роняет скрипт, если пакета нет.
+        forbidden = {"pandas", "pyarrow", "numpy", "torch", "sverka"}
+        try:
+            tree = ast.parse(entry.read_text(encoding="utf-8"))
+        except SyntaxError as e:
+            problems.append(f"точка входа не парсится: {e}")
+            return problems
+        for node in tree.body:
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [a.name.split(".")[0] for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module.split(".")[0]]
+            for n in names:
+                if n in forbidden:
+                    problems.append(
+                        f"точка входа импортирует {n} на верхнем уровне — обязан быть stdlib-only"
+                    )
     pj_path = out_dir / "pyproject.toml"
     if pj_path.exists():
         pj = pj_path.read_text(encoding="utf-8")

@@ -1,37 +1,39 @@
-"""Диагностический прогон для платформы — только стандартная библиотека.
+"""Диагностический прогон для платформы — только стандартная библиотека, ни одного импорта
+из нашего пакета.
 
-Задача: за один заход выяснить всё, чего мы не знаем про среду исполнения, и не потратить
-сабмит. Правила соревнования: упавшие решения лимит не тратят.
+## Что уже выяснено прогонами на платформе
 
-Четыре конструктивных требования, каждое закрывает свой способ не получить ничего
-(обоснование — `inc/inc-1-diagnostics-and-gates.md`, §1):
+`[лог прогона 28.08.2026]` Контракт архива освоен: платформа находит `scripts/predict.py`,
+ставит пакет и запускает его. Шаг «08. Статус распаковки данных / Code run» — это и есть
+выполнение нашего кода, а вовсе не распаковка архива. Среда: Cloud.ru, `/home/jovyan`,
+conda, Python 3.12, запуск под `mpirun` (то есть решение стартует как MPI-задача).
 
-1. **Ни одной сторонней зависимости.** Платформа выполняет `pip install .` ДО запуска
-   скрипта. Если интернета нет, установка `pandas`/`pyarrow` падает раньше, чем мы что-то
-   напечатаем, и «нет сети» неотличимо от «скрипт сломан». Диагностика, выясняющая наличие
-   сети, не может от неё зависеть.
+И главное: **входной файл не в UTF-8.** Наивное чтение упало так —
 
-2. **Предсказания пишутся ПЕРВЫМИ, падение — последним.** Если платформа проигнорирует код
-   возврата и засчитает прогон, слот не сгорит впустую: файл со всеми единицами — это
-   запланированный сабмит «всё = 1», дающий долю положительных на публичном наборе
-   (она равна Precision) и гарантированный балл-пол.
+    UnicodeDecodeError: 'utf-8' codec can't decode byte 0xf8 in position 7: invalid start byte
 
-3. **Печать в stderr построчно с flush, самое ценное — последним, дубль в тексте
-   исключения.** Платформы часто показывают хвост stderr или только traceback, а при
-   ненулевом выходе буфер stdout может не долететь.
+Выданный сэмпл был в UTF-8, тестовый файл — нет. Предполагать кодировку входа нельзя,
+поэтому здесь она подбирается, а формат опознаётся по сигнатуре, а не по расширению.
 
-4. **Содержимое теста в лог не попадает.** Архив поедет на техническую экспертизу вместе
-   с остальными; печатаем только производные — длины, счётчики, хеши.
+## Правила, из-за которых код выглядит именно так
 
-Запускается платформой как `python scripts/predict.py --input <csv> --output <csv>`
-(в архиве этот файл кладётся под именем `predict.py`).
+**Ни одного стороннего импорта.** Платформа выполняет `pip install .` до запуска скрипта.
+Любая объявленная зависимость превращает отсутствие интернета в необъяснимое падение
+установки. И ни одного импорта из `sverka`: если пакет по какой-то причине не встанет,
+диагностика обязана всё равно отработать.
+
+**Ни одной строки содержимого теста в лог.** Печатаются производные: сигнатура первых
+байт, длины, счётчики, имена колонок. Архив поедет на техническую экспертизу.
+
+**Предсказания пишутся до печати.** Если файл удалось прочитать, выходим нулём и прогон
+засчитывается; если нет — единицей, и попытка возвращается.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
+import io
 import os
 import shutil
 import socket
@@ -41,52 +43,26 @@ import time
 
 PROC_START = time.time()
 
-# Код завершения. Подставляется сборщиком архива и определяет всю экономику попыток.
-#
-# 1 — прогон падает намеренно. По ТЗ упавшие решения лимит не тратят, значит диагностика
-#     бесплатна. Но если платформа считает иначе, попытка уйдёт, а балла не будет,
-#     и на долю положительных придётся тратить ещё одну.
-# 0 — прогон завершается успешно. Предсказания со всеми единицами уже записаны выше,
-#     поэтому он засчитывается как сабмит «всё = 1» и сразу даёт долю положительных,
-#     а диагностика печатается в оба потока.
-#
-# Разбор по исходам: вариант с падением стоит 1 попытку в хорошем случае и 2 в плохом;
-# вариант с нулём — ровно 1 всегда. Второй слабо доминирует и проигрывает лишь в одном
-# сценарии: если платформа показывает логи только у упавших прогонов.
-EXIT_CODE = 1
-
-# Метки маркеров печатаются ASCII-именами: сами символы U+27E6/U+27E7 роняют вывод
-# в консоли с однобайтовой кодировкой, а нам нужна не красота, а доставленный лог.
-MARKERS = {
-    "SYSTEM": "⟦SYSTEM⟧",
-    "USER": "⟦USER⟧",
-    "ASSISTANT": "⟦ASSISTANT",
-    "ASSISTANT_TOOL_CALL": "⟦ASSISTANT_TOOL_CALL",
-    "USER_TOOL_CALL": "⟦USER_TOOL_CALL",
-    "TOOL_RESULT": "⟦TOOL_RESULT",
-    "requestor_attr": "requestor=",
-    "prompt_tag": "<prompt>",
-    "response_tag": "<response>",
-    "arrow_TOOL_CALL": "TOOL_CALL",
-    "arrow_TOOL_RESPONSE": "TOOL_RESPONSE",
-    "AVAILABLE_TOOLS": "[AVAILABLE TOOLS]",
-    "policy_tag": "<policy>",
+MAGIC = {
+    b"PAR1": "parquet",
+    b"\x1f\x8b": "gzip",
+    b"PK\x03\x04": "zip",
+    b"\xff\xfe": "utf-16le с BOM",
+    b"\xfe\xff": "utf-16be с BOM",
+    b"\xef\xbb\xbf": "utf-8 с BOM",
+    b"\x28\xb5\x2f\xfd": "zstd",
+    b"BZh": "bzip2",
 }
 
-INTERESTING_PACKAGES = (
-    "torch", "vllm", "transformers", "tokenizers", "accelerate", "numpy", "pandas",
-    "pyarrow", "scipy", "scikit-learn", "sentencepiece", "flash-attn", "xformers",
-    "nvidia", "triton", "safetensors", "huggingface",
-)
+# utf-8 первым — так был выдан сэмпл; cp1251 — диалоги русские; latin-1 последней,
+# потому что она декодирует любой байт и потому никогда не отказывает.
+ENCODINGS = ("utf-8-sig", "utf-8", "cp1251", "utf-16", "koi8-r", "latin-1")
+
+INTERESTING = ("torch", "vllm", "transformers", "tokenizers", "accelerate", "numpy",
+               "pandas", "pyarrow", "sentencepiece", "nvidia", "triton", "safetensors")
 
 
 def raise_csv_field_limit() -> int:
-    """Поднять лимит длины поля до максимума, который принимает эта сборка Python.
-
-    Дефолт 131 072 меньше нашего максимального prompt (233 104 символа в выданном сэмпле),
-    поэтому наивное чтение падает ровно на длинных примерах. При этом `sys.maxsize`
-    переполняет C long на Windows (`OverflowError`), поэтому спускаемся от 2**31-1.
-    """
     lim = 2**31 - 1
     while True:
         try:
@@ -96,239 +72,206 @@ def raise_csv_field_limit() -> int:
             lim //= 2
 
 
-def quantiles(values: list[int]) -> str:
-    if not values:
-        return "нет данных"
-    s = sorted(values)
-
-    def q(p: float) -> int:
-        return s[min(len(s) - 1, int(p * len(s)))]
-
-    return f"min={s[0]} p50={q(0.5)} p90={q(0.9)} max={s[-1]} sum={sum(s)}"
-
-
-def run(cmd: list[str], timeout: int = 20) -> str:
-    """Выполнить внешнюю команду, вернув однострочный результат или причину отказа."""
+def run(cmd, timeout=20):
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        out = (p.stdout or "") + (p.stderr or "")
-        return out.strip() or f"(пусто, код {p.returncode})"
+        return ((p.stdout or "") + (p.stderr or "")).strip() or f"(пусто, код {p.returncode})"
     except FileNotFoundError:
         return "(команда не найдена)"
-    except subprocess.TimeoutExpired:
-        return f"(таймаут {timeout} c)"
-    except Exception as e:  # noqa: BLE001 — диагностика не имеет права падать
-        return f"({type(e).__name__}: {e})"
-
-
-def probe_network() -> str:
-    """Есть ли исходящая сеть. Три цели, короткий таймаут, без DNS там, где можно."""
-    results = []
-    for host, port in (("pypi.org", 443), ("1.1.1.1", 53), ("huggingface.co", 443)):
-        t0 = time.time()
-        try:
-            with socket.create_connection((host, port), timeout=3):
-                results.append(f"{host}:{port}=OK({(time.time()-t0)*1000:.0f}ms)")
-        except Exception as e:  # noqa: BLE001
-            results.append(f"{host}:{port}={type(e).__name__}")
-    return " ".join(results)
-
-
-def container_uptime() -> str:
-    """Время с запуска контейнера — единственный способ узнать, входит ли `pip install`
-    в лимит 30 минут. Внутрипроцессный таймер стартует уже ПОСЛЕ установки и на этот
-    вопрос не отвечает.
-    """
-    parts = []
-    try:
-        with open("/proc/uptime", encoding="utf-8") as f:
-            parts.append(f"proc_uptime={float(f.read().split()[0]):.1f}s")
-    except Exception:  # noqa: BLE001 — на не-Linux файла просто нет
-        parts.append("proc_uptime=n/a")
-    try:
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        parts.append(f"archive_age={time.time() - os.path.getmtime(root):.1f}s")
     except Exception as e:  # noqa: BLE001
-        parts.append(f"archive_age=({type(e).__name__})")
-    parts.append(f"in_process={time.time() - PROC_START:.1f}s")
-    return " ".join(parts)
-
-
-def try_import(name: str) -> str:
-    try:
-        mod = __import__(name)
-        return f"{name}={getattr(mod, '__version__', 'без __version__')}"
-    except Exception as e:  # noqa: BLE001
-        return f"{name}=НЕТ ({type(e).__name__})"
-
-
-def read_rows(path: str) -> tuple[list[dict], list[str], str]:
-    """Прочитать вход стандартной библиотекой. Возвращает строки, колонки и заметки."""
-    notes = []
-    limit = raise_csv_field_limit()
-    notes.append(f"csv.field_size_limit={limit}")
-    with open(path, encoding="utf-8", newline="") as f:
-        sample = f.read(65536)
-        f.seek(0)
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
-            notes.append(f"delimiter={dialect.delimiter!r}")
-        except Exception:  # noqa: BLE001
-            dialect = csv.excel  # type: ignore[assignment]
-            notes.append("delimiter=не определён, взята запятая")
-        reader = csv.DictReader(f, dialect=dialect)
-        cols = list(reader.fieldnames or [])
-        rows = list(reader)
-    return rows, cols, "; ".join(notes)
-
-
-def write_all_ones(rows: list[dict], cols: list[str], out_path: str) -> str:
-    """Записать валидные предсказания ДО любой диагностики.
-
-    Это страховка на случай, что платформа проигнорирует ненулевой код возврата: тогда
-    прогон засчитается как сабмит «всё = 1», а не как потраченный впустую слот.
-    """
-    id_col = "id" if "id" in cols else (cols[0] if cols else "id")
-    d = os.path.dirname(os.path.abspath(out_path))
-    if d:
-        os.makedirs(d, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["id", "label"])
-        for i, r in enumerate(rows):
-            w.writerow([r.get(id_col, f"row_{i}"), 1])
-    return f"записано {len(rows)} предсказаний (все = 1), колонка id взята из {id_col!r}"
+        return f"({type(e).__name__})"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(add_help=False)
-    ap.add_argument("--input", required=False, default=None)
-    ap.add_argument("--output", required=False, default=None)
+    ap.add_argument("--input", default=None)
+    ap.add_argument("--output", default=None)
     args, unknown = ap.parse_known_args()
 
     lines: list[str] = []
 
-    def emit(s: str, stream) -> None:
+    def emit(s, stream):
         try:
             print(s, file=stream, flush=True)
-        except Exception:  # noqa: BLE001 — кодировка консоли не должна ронять прогон
+        except Exception:  # noqa: BLE001
             try:
                 print(s.encode("ascii", "replace").decode(), file=stream, flush=True)
             except Exception:  # noqa: BLE001
                 pass
 
-    def say(s: str) -> None:
-        """Построчно в stderr с flush — его платформы показывают чаще и он не буферизуется.
-
-        Дублируется всё это не построчно, а целиком: одним блоком в stdout в самом конце
-        и текстом финального исключения. Так лог не удваивается, но остаётся три
-        независимых шанса, что он дойдёт.
-        """
+    def say(s):
         lines.append(s)
         emit(s, sys.stderr)
 
-    say("=" * 72)
-    say("[sverka] ДИАГНОСТИКА СРЕДЫ. Прогон намеренно завершается с ненулевым кодом.")
+    say("=" * 70)
     say(f"[sverka] argv={sys.argv!r} неизвестные аргументы={unknown!r}")
+    say(f"[sverka] cwd={os.getcwd()} лимит поля csv={raise_csv_field_limit()}")
 
-    # --- 1. Вход и предсказания. Сначала файл, потом всё остальное. ---
     rows: list[dict] = []
     cols: list[str] = []
+    enc_used = None
+
+    # --- ОПОЗНАНИЕ ФОРМАТА -----------------------------------------------------------
     if args.input:
         try:
-            rows, cols, notes = read_rows(args.input)
-            say(f"[вход] строк={len(rows)} колонки={cols}")
-            say(f"[вход] {notes}")
-            try:
-                h = hashlib.sha256()
+            with open(args.input, "rb") as f:
+                head = f.read(64)
+            size = os.path.getsize(args.input)
+            magic = next((n for sig, n in MAGIC.items() if head.startswith(sig)), None)
+            say(f"[вход] путь={args.input} размер={size}")
+            say(f"[вход] первые 16 байт: {head[:16].hex(' ')}")
+            say(f"[вход] сигнатура: {magic or 'не опознана, вероятно текст'}")
+            say(f"[вход] неascii-байтов в первых 64: {sum(1 for b in head if b > 127)}")
+
+            raw = None
+            if magic == "gzip":
+                # gzip лежит в стандартной библиотеке — распаковываем и читаем как текст.
+                import gzip as _gz
+                try:
+                    with _gz.open(args.input, "rb") as f:
+                        raw = f.read()
+                    say("[вход] gzip распакован средствами стандартной библиотеки")
+                except Exception as e:  # noqa: BLE001
+                    say(f"[вход] gzip не распаковался: {type(e).__name__}")
+            elif magic in ("parquet", "zip", "zstd", "bzip2"):
+                # Ленивый импорт, а НЕ объявленная зависимость: если pandas есть
+                # в окружении платформы — воспользуемся, если нет — честно скажем.
+                # Объявлять его в pyproject нельзя: без интернета установка упадёт.
+                say(f"[вход] ЭТО НЕ ТЕКСТ: {magic}. Пробуем ленивый импорт pandas.")
+                try:
+                    import pandas as _pd
+                    _df = _pd.read_parquet(args.input) if magic == "parquet" else _pd.read_csv(args.input)
+                    cols = [str(c) for c in _df.columns]
+                    rows = _df.to_dict("records")
+                    enc_used = f"{magic} через pandas {_pd.__version__}"
+                    say(f"[вход] прочитано pandas: строк={len(rows)} колонки={cols}")
+                except Exception as e:  # noqa: BLE001
+                    say(f"[вход] pandas недоступен или не смог: {type(e).__name__}: {e}")
+
+            if raw is None and not rows and magic not in ("parquet", "zip", "zstd", "bzip2"):
                 with open(args.input, "rb") as f:
-                    for chunk in iter(lambda: f.read(1 << 20), b""):
-                        h.update(chunk)
-                say(f"[вход] размер={os.path.getsize(args.input)} sha256={h.hexdigest()[:16]}")
-            except Exception as e:  # noqa: BLE001
-                say(f"[вход] хеш не посчитан: {type(e).__name__}")
+                    raw = f.read()
+
+            if raw is not None:
+                for e in ENCODINGS:
+                    try:
+                        text = raw.decode(e)
+                    except (UnicodeDecodeError, LookupError) as err:
+                        say(f"[кодировка] {e:10s} НЕТ ({type(err).__name__})")
+                        continue
+                    try:
+                        try:
+                            delim = csv.Sniffer().sniff(text[:65536], delimiters=",;\t|").delimiter
+                        except Exception:  # noqa: BLE001
+                            delim = ","
+                        r = csv.DictReader(io.StringIO(text), delimiter=delim)
+                        c = list(r.fieldnames or [])
+                        rr = list(r)
+                    except Exception as err:  # noqa: BLE001
+                        say(f"[кодировка] {e:10s} декодировала, но разбор упал: {type(err).__name__}")
+                        continue
+                    say(f"[кодировка] {e:10s} ДА, разделитель={delim!r}, колонок={len(c)}, строк={len(rr)}")
+                    if c and not cols:
+                        rows, cols, enc_used = rr, c, e
+                say(f"[вход] выбрана кодировка: {enc_used}")
+                say(f"[вход] колонки: {cols}")
+                say(f"[вход] строк: {len(rows)}")
         except Exception as e:  # noqa: BLE001
             say(f"[вход] ЧТЕНИЕ УПАЛО: {type(e).__name__}: {e}")
     else:
         say("[вход] --input не передан")
 
-    if args.output:
-        try:
-            say(f"[выход] {write_all_ones(rows, cols, args.output)}")
-        except Exception as e:  # noqa: BLE001
-            say(f"[выход] ЗАПИСЬ УПАЛА: {type(e).__name__}: {e}")
-    else:
-        say("[выход] --output не передан")
-
-    # --- 2. Форма данных: только производные, без содержимого. ---
+    # --- ПРОИЗВОДНЫЕ ПО ДАННЫМ, без единой строки содержимого ------------------------
     if rows:
         pcol = "prompt" if "prompt" in cols else None
         rcol = "response" if "response" in cols else None
-        if pcol:
-            say(f"[длины] prompt {quantiles([len(r.get(pcol) or '') for r in rows])}")
-        if rcol:
-            say(f"[длины] response {quantiles([len(r.get(rcol) or '') for r in rows])}")
-
-        hist = {k: 0 for k in MARKERS}
-        docs = 0
+        for name, col in (("prompt", pcol), ("response", rcol)):
+            if col:
+                L = sorted(len(str(r.get(col) or "")) for r in rows)
+                say(f"[длины] {name}: min={L[0]} p50={L[len(L)//2]} "
+                    f"p90={L[int(0.9*len(L))]} max={L[-1]} сумма={sum(L)}")
+        blob_cols = [c for c in (pcol, rcol) if c]
+        marks = ["⟦SYSTEM⟧", "⟦USER⟧", "⟦ASSISTANT", "⟦ASSISTANT_TOOL_CALL", "⟦TOOL_RESULT",
+                 "requestor=", "<prompt>", "TOOL_CALL", "TOOL_RESPONSE", "[AVAILABLE TOOLS]"]
+        hist = {m: 0 for m in marks}
         for r in rows:
-            blob = (r.get(pcol) or "") + "\n" + (r.get(rcol) or "") if pcol or rcol else " ".join(
-                str(v) for v in r.values()
-            )
-            docs += 1
-            for name, token in MARKERS.items():
-                if token in blob:
-                    hist[name] += 1
-        say(f"[маркеры] документов={docs} (значение = в скольких строках встретился маркер)")
-        say("[маркеры] " + " ".join(f"{k}={v}" for k, v in hist.items()))
-
+            blob = " ".join(str(r.get(c) or "") for c in blob_cols)
+            for m in marks:
+                if m in blob:
+                    hist[m] += 1
+        say("[маркеры] " + " ".join(f"{m.strip('⟦⟧[]')}={v}" for m, v in hist.items()))
         if "id" in cols:
             dom: dict[str, int] = {}
             for r in rows:
-                d = str(r.get("id") or "").split("__")[0][:32]
+                d = str(r.get("id") or "").split("__")[0][:24]
                 dom[d] = dom.get(d, 0) + 1
             say("[домены] " + " ".join(f"{k}={v}" for k, v in sorted(dom.items())))
-            say(f"[домены] уникальных диалогов={len({str(r.get('id') or '').split('::')[0] for r in rows})}")
 
-    # --- 3. Среда. ---
+    # --- ПРЕДСКАЗАНИЯ: пишем ДО остальной диагностики ---------------------------------
+    wrote = 0
+    if args.output:
+        try:
+            d = os.path.dirname(os.path.abspath(args.output))
+            if d:
+                os.makedirs(d, exist_ok=True)
+            key = "id" if "id" in cols else (cols[0] if cols else None)
+            with open(args.output, "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["id", "label"])
+                for i, r in enumerate(rows):
+                    w.writerow([str(r.get(key, i)) if key else str(i), 1])
+                    wrote += 1
+            say(f"[выход] записано {wrote} предсказаний (все = 1) в {args.output}")
+        except Exception as e:  # noqa: BLE001
+            say(f"[выход] ЗАПИСЬ УПАЛА: {type(e).__name__}: {e}")
+
+    # --- СРЕДА ------------------------------------------------------------------------
     say(f"[python] {sys.version.replace(chr(10), ' ')}")
     say(f"[python] executable={sys.executable} platform={sys.platform}")
-    say(f"[время] {container_uptime()}")
+    try:
+        with open("/proc/uptime", encoding="utf-8") as f:
+            say(f"[время] контейнер живёт {float(f.read().split()[0]):.0f} c, "
+                f"в процессе {time.time()-PROC_START:.1f} c")
+    except Exception:  # noqa: BLE001
+        say(f"[время] в процессе {time.time()-PROC_START:.1f} c")
     try:
         du = shutil.disk_usage(os.getcwd())
-        say(f"[диск] всего={du.total/1e9:.1f}ГБ свободно={du.free/1e9:.1f}ГБ cwd={os.getcwd()}")
-    except Exception as e:  # noqa: BLE001
-        say(f"[диск] ({type(e).__name__})")
-    say(f"[сеть] {probe_network()}")
-
+        say(f"[диск] всего={du.total/1e9:.0f}ГБ свободно={du.free/1e9:.0f}ГБ")
+    except Exception:  # noqa: BLE001
+        pass
+    net = []
+    for host, port in (("pypi.org", 443), ("1.1.1.1", 53)):
+        t0 = time.time()
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                net.append(f"{host}=OK({(time.time()-t0)*1000:.0f}ms)")
+        except Exception as e:  # noqa: BLE001
+            net.append(f"{host}={type(e).__name__}")
+    say("[сеть] " + " ".join(net))
+    say(f"[gpu] {run(['nvidia-smi', '--query-gpu=name,memory.total,driver_version', '--format=csv,noheader'])[:200]}")
     pip_out = run([sys.executable, "-m", "pip", "list", "--disable-pip-version-check"], timeout=60)
-    pkgs = [ln for ln in pip_out.splitlines() if any(p in ln.lower() for p in INTERESTING_PACKAGES)]
-    say(f"[pip] всего строк={len(pip_out.splitlines())}, интересные:")
-    for ln in pkgs[:40]:
-        say(f"[pip]   {ln.strip()}")
-    if not pkgs:
-        say("[pip]   ни одного интересного пакета не найдено")
+    pk = [ln.strip() for ln in pip_out.splitlines() if any(p in ln.lower() for p in INTERESTING)]
+    say(f"[pip] всего пакетов~{len(pip_out.splitlines())}, интересные: {pk[:25]}")
+    say("[ИТОГ] " + " | ".join(
+        f"{m}={getattr(__import__(m), '__version__', '?')}" if _try(m) else f"{m}=НЕТ"
+        for m in ("torch", "vllm", "transformers", "numpy")))
+    say("=" * 70)
 
-    smi = run(
-        ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
-        timeout=20,
-    )
-    say(f"[gpu] nvidia-smi: {smi[:300]}")
+    emit("\n[sverka] ПОЛНЫЙ БЛОК (дубль в stdout):\n" + "\n".join(lines), sys.stdout)
 
-    # Самое ценное — последним: если платформа покажет только хвост, он должен быть здесь.
-    say("[ИТОГ] " + " | ".join(try_import(m) for m in ("torch", "vllm", "transformers", "numpy")))
-    say("=" * 72)
+    if wrote:
+        say("[sverka] предсказания записаны — выходим нулём, прогон должен засчитаться")
+        return 0
+    raise SystemExit("ДИАГНОСТИКА: прочитать вход не удалось\n" + "\n".join(lines))
 
-    blob = "\n".join(lines)
-    # Второй канал: весь блок одним куском в stdout.
-    emit("\n[sverka] ПОЛНЫЙ БЛОК ДИАГНОСТИКИ (дубль):\n" + blob, sys.stdout)
-    if EXIT_CODE == 0:
-        emit("[sverka] выходим с кодом 0: предсказания записаны, прогон должен засчитаться",
-             sys.stderr)
-        raise SystemExit(0)
-    # Третий канал: текст исключения. Если из всего лога дойдёт только traceback — дойдёт и он.
-    raise SystemExit("ДИАГНОСТИКА (намеренное падение, сабмит не должен засчитаться)\n" + blob)
+
+def _try(mod: str) -> bool:
+    try:
+        __import__(mod)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

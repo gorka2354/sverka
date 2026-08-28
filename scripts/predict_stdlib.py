@@ -55,6 +55,56 @@ def raise_csv_field_limit() -> int:
             lim //= 2
 
 
+def read_any(path: str) -> tuple[list[dict], list[str], str | None]:
+    """Прочитать вход, подобрав формат и кодировку.
+
+    `[инцидент 28.08.2026, лог платформы]` Наивное чтение в UTF-8 упало на боевом файле:
+    `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xf8 in position 7`. Выданный
+    сэмпл был в UTF-8, тестовый файл — нет, и увидеть его мы не можем. Поэтому кодировка
+    подбирается, а формат опознаётся по сигнатуре, а не по расширению.
+
+    latin-1 стоит последней намеренно: она декодирует любой байт и потому не отказывает
+    никогда. Текст при этом может быть искажён, но для правил «всё = 1» и «есть TOOL_CALL»
+    это неважно, а потерять весь прогон из-за кодировки — важно.
+    """
+    import io as _io
+
+    with open(path, "rb") as f:
+        head = f.read(8)
+    if head.startswith(b"\x1f\x8b"):
+        import gzip as _gz
+        with _gz.open(path, "rb") as f:
+            raw = f.read()
+    elif head.startswith(b"PAR1"):
+        # Ленивый импорт, а не объявленная зависимость: объявить pandas нельзя,
+        # без интернета установка упадёт раньше запуска.
+        import pandas as _pd
+        df = _pd.read_parquet(path)
+        return df.to_dict("records"), [str(c) for c in df.columns], "parquet через pandas"
+    else:
+        with open(path, "rb") as f:
+            raw = f.read()
+
+    for enc in ("utf-8-sig", "utf-8", "cp1251", "utf-16", "koi8-r", "latin-1"):
+        try:
+            text = raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        try:
+            delim = csv.Sniffer().sniff(text[:65536], delimiters=",;\t|").delimiter
+        except Exception:  # noqa: BLE001
+            delim = ","
+        try:
+            reader = csv.DictReader(_io.StringIO(text), delimiter=delim)
+            cols = list(reader.fieldnames or [])
+            rows = list(reader)
+        except Exception:  # noqa: BLE001
+            continue
+        if cols:
+            return rows, cols, enc
+    return [], [], None
+
+
 def decide(row: dict, profile: str) -> int:
     if profile == "all_ones":
         return 1
@@ -80,12 +130,11 @@ def main() -> int:
     limit = raise_csv_field_limit()
     rows: list[dict] = []
     cols: list[str] = []
+    enc_used = None
     if args.input:
-        with open(args.input, encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f)
-            cols = list(reader.fieldnames or [])
-            rows = list(reader)
-    print(f"[sverka] строк={len(rows)} колонки={cols} csv_limit={limit}", file=sys.stderr, flush=True)
+        rows, cols, enc_used = read_any(args.input)
+    print(f"[sverka] строк={len(rows)} колонки={cols} кодировка={enc_used} csv_limit={limit}",
+          file=sys.stderr, flush=True)
 
     id_col = "id" if "id" in cols else (cols[0] if cols else "id")
     out_rows: list[tuple[str, int]] = []
