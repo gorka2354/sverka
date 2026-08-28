@@ -119,6 +119,25 @@ README = """# сверка — диагностический прогон
 """
 
 
+# Раскладка без pyproject.toml. Единственный способ обойти build isolation, когда флаги
+# установки передать некуда: платформа выполняет голое `pip install .`, а при наличии
+# pyproject pip идёт в индекс за setuptools ДО чтения наших зависимостей — и без интернета
+# падает, даже если зависимостей у нас нет вовсе.
+_LEGACY_SETUP_CALL = (
+    "from setuptools import setup\n\n"
+    "setup(\n"
+    '    name="sverka",\n'
+    '    version="0.1.0",\n'
+    '    package_dir={"": "src"},\n'
+    '    packages=["sverka"],\n'
+    "    install_requires=[],\n"
+    ")\n"
+)
+SETUP_PY_LEGACY = SETUP_PY_HOOK.replace(
+    "from setuptools import setup\n\nsetup()\n", _LEGACY_SETUP_CALL
+)
+
+
 PROFILE_ENTRY = {
     "diagnostic": "scripts/diagnose.py",
     # Тот же скрипт, но завершается НУЛЁМ. Разбор по исходам: вариант с падением стоит
@@ -132,7 +151,8 @@ PROFILE_ENTRY = {
 }
 
 
-def build_diagnostic(out_dir: Path, profile: str = "diagnostic") -> Path:
+def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
+                     packaging: str = "pep517") -> Path:
     if out_dir.exists():
         shutil.rmtree(out_dir)
     (out_dir / "scripts").mkdir(parents=True)
@@ -155,8 +175,14 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic") -> Path:
         assert 'PROFILE = "all_ones"' in text, "не найдена строка профиля в точке входа"
         entry.write_text(text.replace('PROFILE = "all_ones"', f'PROFILE = "{profile}"'),
                          encoding="utf-8")
-    (out_dir / "pyproject.toml").write_text(PYPROJECT_DIAGNOSTIC, encoding="utf-8")
-    (out_dir / "setup.py").write_text(SETUP_PY_HOOK, encoding="utf-8")
+    if packaging == "pep517":
+        (out_dir / "pyproject.toml").write_text(PYPROJECT_DIAGNOSTIC, encoding="utf-8")
+        (out_dir / "setup.py").write_text(SETUP_PY_HOOK, encoding="utf-8")
+    else:
+        # Без pyproject.toml pip идёт по старому пути и берёт setuptools из окружения,
+        # а не из индекса. Это единственный способ обойти build isolation, когда флаги
+        # установки нам передать некуда: платформа выполняет голое `pip install .`.
+        (out_dir / "setup.py").write_text(SETUP_PY_LEGACY, encoding="utf-8")
     (out_dir / "src" / "sverka" / "__init__.py").write_text(PACKAGE_INIT, encoding="utf-8")
     (out_dir / "README.md").write_text(README_BY_PROFILE.get(profile, README), encoding="utf-8")
     (out_dir / "model" / ".gitkeep").write_text("", encoding="utf-8")
@@ -174,9 +200,13 @@ def check(out_dir: Path) -> list[str]:
         for mod in ("pandas", "pyarrow", "numpy", "torch", "sverka"):
             if f"import {mod}" in src or f"from {mod}" in src:
                 problems.append(f"точка входа импортирует {mod} — профиль обязан быть stdlib-only")
-    pj = (out_dir / "pyproject.toml").read_text(encoding="utf-8")
-    if "dependencies = []" not in pj:
-        problems.append("в pyproject объявлены зависимости — установка может упасть без сети")
+    pj_path = out_dir / "pyproject.toml"
+    if pj_path.exists():
+        pj = pj_path.read_text(encoding="utf-8")
+        if "dependencies = []" not in pj:
+            problems.append("в pyproject объявлены зависимости — установка упадёт без сети")
+    elif not (out_dir / "setup.py").exists():
+        problems.append("нет ни pyproject.toml, ни setup.py — pip не сможет установить пакет")
     if not (out_dir / "src").exists():
         problems.append("нет src/ — pip install . не найдёт пакет")
     return problems
@@ -188,6 +218,11 @@ def main() -> int:
                     choices=["diagnostic", "diagnostic_scored", "all_ones", "has_tool_call"])
     ap.add_argument("--out", default=None, help="куда собирать (по умолчанию submissions/<profile>)")
     ap.add_argument("--archive", action="store_true", help="дополнительно упаковать в .tar.gz")
+    ap.add_argument("--packaging", default="pep517", choices=["pep517", "legacy"],
+                    help="pep517 — с pyproject.toml (включает build isolation: pip идёт "
+                         "в индекс за setuptools ДО чтения наших зависимостей, и без "
+                         "интернета установка падает). legacy — только setup.py, без "
+                         "pyproject: pip использует setuptools из окружения")
     ap.add_argument("--layout", default="flat", choices=["flat", "nested"],
                     help="flat — файлы в корне архива; nested — внутри папки root/. "
                          "В ТЗ дерево нарисовано с 'root/' сверху, но это почти наверняка "
@@ -196,7 +231,7 @@ def main() -> int:
     args = ap.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "submissions" / args.profile
-    build_diagnostic(out_dir, args.profile)
+    build_diagnostic(out_dir, args.profile, args.packaging)
 
     problems = check(out_dir)
     for p in problems:
@@ -212,7 +247,8 @@ def main() -> int:
     print(f"итого {len(files)} файлов, {total/1024:.1f} КБ")
 
     if args.archive:
-        suffix = "" if args.layout == "flat" else "-nested"
+        suffix = ("" if args.layout == "flat" else "-nested") + (
+            "" if args.packaging == "pep517" else "-legacy")
         arc = out_dir.parent / (out_dir.name + suffix + ".tar.gz")
         with tarfile.open(arc, "w:gz") as tf:
             if args.layout == "flat":
