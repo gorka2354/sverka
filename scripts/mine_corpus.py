@@ -33,7 +33,19 @@
 данные. Круговая проверка (рендер → разбор → те же вызовы, схемы и вердикт гейтов) прогнана
 на реальных траекториях: 81 из 81.
 
-    python scripts/mine_corpus.py --data ~/sverka/tau2/data --out corpus.csv --limit-files 8
+## Что записывается
+
+Индекс, а не текст: ссылка на файл, номер симуляции и номер хода, метка, источник метки,
+сработавшие гейты, домен, reward и длины. Текст восстанавливается детерминированно
+функцией `sverka.tau2.render_by_ref`. Первая версия писала полный промпт в каждую строку
+и дала файл на 9.9 ГБ при 175 972 строках — непригодный ни к чтению, ни к пересылке.
+
+⚠️ **Независимых групп мало.** `[замер]` 175 972 строки приходятся всего на 375 различных
+задач: одна задача повторяется по трайлам и по моделям-участникам. Валидационный сплит
+делить по ЗАДАЧЕ, а не по строке и не по файлу, иначе одна и та же задача попадёт
+и в обучение, и в проверку.
+
+    python scripts/mine_corpus.py --data ~/sverka/tau2/data --out corpus_index.csv
 """
 
 from __future__ import annotations
@@ -86,8 +98,9 @@ def main() -> int:
     fh = open(out, "w", encoding="utf-8", newline="")
     writer = csv.DictWriter(
         fh,
-        fieldnames=["id", "prompt", "response", "label", "label_source", "gates",
-                    "domain", "reward", "source_file"],
+        fieldnames=["id", "source_file", "sim_index", "turn_idx", "trial", "label",
+                    "label_source", "gates", "domain", "reward", "has_tool_calls",
+                    "prompt_chars", "response_chars"],
     )
     writer.writeheader()
 
@@ -135,17 +148,24 @@ def main() -> int:
                     if len(prompt) > args.max_chars:
                         stats["пропущено: слишком длинный"] += 1
                         continue
+                    # В индекс идут ССЫЛКИ и признаки, а не текст. Текст восстанавливается
+                    # функцией `render_by_ref`. Первая версия писала полный промпт и дала
+                    # файл на 9.9 ГБ, непригодный к работе.
                     writer.writerow(
                         {
                             "id": f"{tt.uid}#{tt.trial}",
-                            "prompt": prompt,
-                            "response": response,
+                            "source_file": tt.source,
+                            "sim_index": tt.sim_index,
+                            "turn_idx": tt.turn_idx,
+                            "trial": tt.trial,
                             "label": label,
                             "label_source": source,
                             "gates": "|".join(rep.names),
                             "domain": tt.domain,
                             "reward": tt.reward,
-                            "source_file": tt.source,
+                            "has_tool_calls": int(bool(tt.turn.tool_calls)),
+                            "prompt_chars": len(prompt),
+                            "response_chars": len(response),
                         }
                     )
                     n_rows += 1

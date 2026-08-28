@@ -111,6 +111,10 @@ class TrajectoryTurn:
     reward: float
     transcript: Transcript
     turn: Turn
+    # Позиция симуляции в файле. Нужна, чтобы отрендерить ход заново по ссылке: корпус
+    # хранит ССЫЛКИ, а не текст. С текстом 176 тысяч строк весят 9.9 ГБ и становятся
+    # непригодны к работе; ссылочный индекс тех же строк — единицы мегабайт.
+    sim_index: int = -1
 
     @property
     def uid(self) -> str:
@@ -251,6 +255,22 @@ def render_example(tt: TrajectoryTurn) -> tuple[str, str]:
     return "\n\n".join(parts), response
 
 
+def render_by_ref(path: str | Path, sim_index: int, turn_idx: int) -> tuple[str, str] | None:
+    """Отрендерить один ход по ссылке (файл, номер симуляции, номер хода).
+
+    Корпус хранит ссылки, а не текст, и вот почему. `[инцидент 28.08.2026]` Первая версия
+    писала полный отрендеренный промпт в каждую строку: 175 972 строки заняли **9.9 ГБ**
+    при медианном промпте порядка 56 КБ. Такой файл нельзя ни открыть, ни переслать, ни
+    держать в памяти. Ссылочный индекс тех же строк весит единицы мегабайт, а текст
+    восстанавливается детерминированно этой функцией — ровно тот же, что был при майнинге,
+    потому что рендер чистый и зависит только от содержимого файла.
+    """
+    for tt in iter_turns(path, only_reward=None, require_tool_calls=False):
+        if tt.sim_index == sim_index and tt.turn_idx == turn_idx:
+            return render_example(tt)
+    return None
+
+
 def iter_turns(
     path: str | Path,
     *,
@@ -275,7 +295,7 @@ def iter_turns(
     if max_sims is not None:
         sims = sims[:max_sims]
 
-    for sim in sims:
+    for sim_index, sim in enumerate(sims):
         reward = float((sim.get("reward_info") or {}).get("reward") or 0.0)
         if only_reward is not None and reward != only_reward:
             continue
@@ -308,6 +328,7 @@ def iter_turns(
                 domain=domain,
                 task_id=str(sim.get("task_id") or sim.get("id") or "?"),
                 trial=int(sim.get("trial") or 0),
+                sim_index=sim_index,
                 turn_idx=int(m.get("turn_idx") or i),
                 reward=reward,
                 transcript=tr,
