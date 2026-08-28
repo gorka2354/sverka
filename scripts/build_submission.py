@@ -140,6 +140,7 @@ SETUP_PY_LEGACY = SETUP_PY_HOOK.replace(
 
 
 PROFILE_ENTRY = {
+    "broken": "scripts/predict_minimal.py",  # не используется, профиль собирается отдельно
     # Предельно простая точка входа для отладки контракта вслепую: платформа не показывает
     # ни ошибок, ни логов, поэтому каждый сабмит должен нести ровно один бит информации.
     "minimal": "scripts/predict_minimal.py",
@@ -162,6 +163,21 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
     (out_dir / "scripts").mkdir(parents=True)
     (out_dir / "src" / "sverka").mkdir(parents=True)
     (out_dir / "model").mkdir(parents=True)
+
+    if profile == "broken":
+        # ОТРИЦАТЕЛЬНЫЙ КОНТРОЛЬ. Архив намеренно без точки входа. Нужен, чтобы понять,
+        # что означает номер шага, на котором падают нормальные архивы: если этот упадёт
+        # РАНЬШЕ — значит до запуска нашего кода платформа доходит, и дело в самом коде.
+        # Если упадёт на том же шаге — номер шага generic, и он ничего про код не говорит.
+        (out_dir / "scripts" / ".gitkeep").write_text("", encoding="utf-8")
+        (out_dir / "pyproject.toml").write_text(PYPROJECT_DIAGNOSTIC, encoding="utf-8")
+        (out_dir / "setup.py").write_text(SETUP_PY_HOOK, encoding="utf-8")
+        (out_dir / "src" / "sverka" / "__init__.py").write_text(PACKAGE_INIT, encoding="utf-8")
+        (out_dir / "README.md").write_text(
+            "# отрицательный контроль: архив намеренно без scripts/predict.py\n",
+            encoding="utf-8")
+        (out_dir / "model" / ".gitkeep").write_text("", encoding="utf-8")
+        return out_dir
 
     src = ROOT / PROFILE_ENTRY[profile]
     entry = out_dir / "scripts" / "predict.py"
@@ -198,6 +214,8 @@ def check(out_dir: Path) -> list[str]:
     problems = []
     entry = out_dir / "scripts" / "predict.py"
     if not entry.exists():
+        if out_dir.name.startswith("broken"):
+            return []  # отрицательный контроль: отсутствие точки входа здесь намеренное
         problems.append("нет scripts/predict.py — платформа запускает именно его")
     else:
         src = entry.read_text(encoding="utf-8")
@@ -219,7 +237,8 @@ def check(out_dir: Path) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="diagnostic",
-                    choices=["minimal", "diagnostic", "diagnostic_scored", "all_ones", "has_tool_call"])
+                    choices=["broken", "minimal", "diagnostic", "diagnostic_scored", "all_ones",
+                             "has_tool_call"])
     ap.add_argument("--out", default=None, help="куда собирать (по умолчанию submissions/<profile>)")
     ap.add_argument("--archive", action="store_true", help="дополнительно упаковать архив")
     ap.add_argument("--format", default="tar.gz", choices=["tar.gz", "zip"],
