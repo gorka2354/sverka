@@ -75,6 +75,13 @@ def main() -> int:
     ap.add_argument("--limit-files", type=int, default=8)
     ap.add_argument("--max-mb", type=float, default=60.0)
     ap.add_argument("--max-sims", type=int, default=None)
+    ap.add_argument("--text-turns", action="store_true",
+                    help="включать ходы БЕЗ вызова инструмента. `[замер]` Их 176 099 из "
+                         "479 837 (36.7%) — и это половина целевой задачи: в выданном сэмпле "
+                         "23 из 46 примеров текстовые, а доля позитива там 0.09 против 0.91 "
+                         "в страте с вызовами. Детерминированные гейты туда не достают "
+                         "по построению, поэтому позитивов оттуда не будет: только негативы "
+                         "из решённых задач и кандидаты из проваленных")
     ap.add_argument("--candidates", action="store_true",
                     help="дополнительно выгружать ходы проваленных задач без сильного гейта "
                          "как кандидатов (label = -1) — пул для разбора судьёй")
@@ -112,7 +119,8 @@ def main() -> int:
         # потоком, а разбор идёт одним проходом.
         for reward, base_label, base_source in ((None, None, None),):
             try:
-                for tt in iter_turns(f, only_reward=reward, max_sims=args.max_sims):
+                for tt in iter_turns(f, only_reward=reward, max_sims=args.max_sims,
+                                     require_tool_calls=not args.text_turns):
                     if tt.reward == 1.0:
                         base_label, base_source = 0, "solved_no_gate"
                     elif tt.reward == 0.0:
@@ -133,6 +141,10 @@ def main() -> int:
                     if label == 0 and rep.fired:
                         stats["пропущено: решённая, но гейт сработал"] += 1
                         continue
+                    # Текстовый ход из проваленной задачи автоматически становится
+                    # кандидатом: ни один гейт до него не достаёт, потому что все они
+                    # требуют вызова инструмента. Позитивов из этой страты машинно
+                    # не добыть — только судьёй по пулу кандидатов.
                     if label == 1 and not any(g in POSITIVE_GATES for g in rep.names):
                         # Ход проваленной задачи, который детерминированный слой не объяснил.
                         # Это не негатив и не позитив, а КАНДИДАТ: именно здесь живут
