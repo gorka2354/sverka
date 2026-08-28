@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import tarfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -139,6 +140,9 @@ SETUP_PY_LEGACY = SETUP_PY_HOOK.replace(
 
 
 PROFILE_ENTRY = {
+    # Предельно простая точка входа для отладки контракта вслепую: платформа не показывает
+    # ни ошибок, ни логов, поэтому каждый сабмит должен нести ровно один бит информации.
+    "minimal": "scripts/predict_minimal.py",
     "diagnostic": "scripts/diagnose.py",
     # Тот же скрипт, но завершается НУЛЁМ. Разбор по исходам: вариант с падением стоит
     # 0 попыток в хорошем случае и 1 в плохом, а потом всё равно нужна попытка на «всё = 1»
@@ -168,7 +172,7 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         text = entry.read_text(encoding="utf-8")
         assert "EXIT_CODE = 1" in text, "не найдена константа кода возврата"
         entry.write_text(text.replace("EXIT_CODE = 1", "EXIT_CODE = 0"), encoding="utf-8")
-    elif profile != "diagnostic":
+    elif profile not in ("diagnostic", "minimal"):
         # Профиль зашивается в точку входа, а не передаётся флагом: платформа запускает
         # скрипт со СВОИМИ аргументами, и никакого нашего флага там не будет.
         text = entry.read_text(encoding="utf-8")
@@ -215,9 +219,11 @@ def check(out_dir: Path) -> list[str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="diagnostic",
-                    choices=["diagnostic", "diagnostic_scored", "all_ones", "has_tool_call"])
+                    choices=["minimal", "diagnostic", "diagnostic_scored", "all_ones", "has_tool_call"])
     ap.add_argument("--out", default=None, help="куда собирать (по умолчанию submissions/<profile>)")
-    ap.add_argument("--archive", action="store_true", help="дополнительно упаковать в .tar.gz")
+    ap.add_argument("--archive", action="store_true", help="дополнительно упаковать архив")
+    ap.add_argument("--format", default="tar.gz", choices=["tar.gz", "zip"],
+                    help="платформа приняла tar.gz на загрузку, но могла ожидать zip")
     ap.add_argument("--packaging", default="pep517", choices=["pep517", "legacy"],
                     help="pep517 — с pyproject.toml (включает build isolation: pip идёт "
                          "в индекс за setuptools ДО чтения наших зависимостей, и без "
@@ -249,13 +255,21 @@ def main() -> int:
     if args.archive:
         suffix = ("" if args.layout == "flat" else "-nested") + (
             "" if args.packaging == "pep517" else "-legacy")
-        arc = out_dir.parent / (out_dir.name + suffix + ".tar.gz")
-        with tarfile.open(arc, "w:gz") as tf:
-            if args.layout == "flat":
-                for item in sorted(out_dir.iterdir()):
-                    tf.add(item, arcname=item.name)
-            else:
-                tf.add(out_dir, arcname="root")
+        arc = out_dir.parent / (out_dir.name + suffix + "." + args.format)
+        items = sorted(out_dir.rglob("*"))
+        if args.format == "tar.gz":
+            with tarfile.open(arc, "w:gz") as tf:
+                if args.layout == "flat":
+                    for item in sorted(out_dir.iterdir()):
+                        tf.add(item, arcname=item.name)
+                else:
+                    tf.add(out_dir, arcname="root")
+        else:
+            with zipfile.ZipFile(arc, "w", zipfile.ZIP_DEFLATED) as zf:
+                for item in items:
+                    if item.is_file():
+                        rel = item.relative_to(out_dir).as_posix()
+                        zf.write(item, ("root/" + rel) if args.layout == "nested" else rel)
         print(f"архив: {arc} ({arc.stat().st_size/1024:.1f} КБ)")
     return 0
 
