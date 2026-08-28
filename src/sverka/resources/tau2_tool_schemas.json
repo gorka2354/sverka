@@ -1,0 +1,1838 @@
+{
+ "_meta": {
+  "repo": "sierra-research/tau2-bench",
+  "license": "MIT"
+ },
+ "airline": {
+  "book_reservation": {
+   "side": "agent",
+   "description": "Book a reservation.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user to book the reservation such as 'sara_doe_496'`.",
+     "children": []
+    },
+    {
+     "name": "origin",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The IATA code for the origin city such as 'SFO'.",
+     "children": []
+    },
+    {
+     "name": "destination",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The IATA code for the destination city such as 'JFK'.",
+     "children": []
+    },
+    {
+     "name": "flight_type",
+     "type": "FlightType",
+     "required": true,
+     "enum": [],
+     "description": "The type of flight such as 'one_way' or 'round_trip'.",
+     "children": []
+    },
+    {
+     "name": "cabin",
+     "type": "CabinClass",
+     "required": true,
+     "enum": [],
+     "description": "The cabin class such as 'basic_economy', 'economy', or 'business'.",
+     "children": []
+    },
+    {
+     "name": "flights",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "An array of objects containing details about each piece of flight.",
+     "children": [
+      {
+       "name": "flight_number",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "date",
+       "type": "string",
+       "required": true,
+       "enum": []
+      }
+     ]
+    },
+    {
+     "name": "passengers",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "An array of objects containing details about each passenger.",
+     "children": [
+      {
+       "name": "first_name",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "last_name",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "dob",
+       "type": "string",
+       "required": true,
+       "enum": []
+      }
+     ]
+    },
+    {
+     "name": "payment_methods",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "An array of objects containing details about each payment method.",
+     "children": [
+      {
+       "name": "payment_id",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "amount",
+       "type": "integer",
+       "required": true,
+       "enum": []
+      }
+     ]
+    },
+    {
+     "name": "total_baggages",
+     "type": "integer",
+     "required": true,
+     "enum": [],
+     "description": "The total number of baggage items to book the reservation.",
+     "children": []
+    },
+    {
+     "name": "nonfree_baggages",
+     "type": "integer",
+     "required": true,
+     "enum": [],
+     "description": "The number of non-free baggage items to book the reservation.",
+     "children": []
+    },
+    {
+     "name": "insurance",
+     "type": "Insurance",
+     "required": true,
+     "enum": [],
+     "description": "Whether the reservation has insurance.",
+     "children": []
+    }
+   ]
+  },
+  "calculate": {
+   "side": "agent",
+   "description": "Calculate the result of a mathematical expression.",
+   "params": [
+    {
+     "name": "expression",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The mathematical expression to calculate, such as '2 + 2'. The expression can contain numbers, operators (+, -, *, /), parentheses, and spaces.",
+     "children": []
+    }
+   ]
+  },
+  "cancel_reservation": {
+   "side": "agent",
+   "description": "Cancel the whole reservation.",
+   "params": [
+    {
+     "name": "reservation_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The reservation ID, such as 'ZFA04Y'.",
+     "children": []
+    }
+   ]
+  },
+  "get_reservation_details": {
+   "side": "agent",
+   "description": "Get the details of a reservation.",
+   "params": [
+    {
+     "name": "reservation_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The reservation ID, such as '8JX2WO'.",
+     "children": []
+    }
+   ]
+  },
+  "get_user_details": {
+   "side": "agent",
+   "description": "Get the details of a user, including their reservations.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The user ID, such as 'sara_doe_496'.",
+     "children": []
+    }
+   ]
+  },
+  "list_all_airports": {
+   "side": "agent",
+   "description": "Returns a list of all available airports.",
+   "params": []
+  },
+  "search_direct_flight": {
+   "side": "agent",
+   "description": "Search for direct flights between two cities on a specific date.",
+   "params": [
+    {
+     "name": "origin",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The origin city airport in three letters, such as 'JFK'.",
+     "children": []
+    },
+    {
+     "name": "destination",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The destination city airport in three letters, such as 'LAX'.",
+     "children": []
+    },
+    {
+     "name": "date",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The date of the flight in the format 'YYYY-MM-DD', such as '2024-01-01'.",
+     "children": []
+    }
+   ]
+  },
+  "search_onestop_flight": {
+   "side": "agent",
+   "description": "Search for one-stop flights between two cities on a specific date.",
+   "params": [
+    {
+     "name": "origin",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The origin city airport in three letters, such as 'JFK'.",
+     "children": []
+    },
+    {
+     "name": "destination",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The destination city airport in three letters, such as 'LAX'.",
+     "children": []
+    },
+    {
+     "name": "date",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The date of the flight in the format 'YYYY-MM-DD', such as '2024-05-01'.",
+     "children": []
+    }
+   ]
+  },
+  "send_certificate": {
+   "side": "agent",
+   "description": "Send a certificate to a user. Be careful!",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user to book the reservation, such as 'sara_doe_496'.",
+     "children": []
+    },
+    {
+     "name": "amount",
+     "type": "integer",
+     "required": true,
+     "enum": [],
+     "description": "The amount of the certificate to send.",
+     "children": []
+    }
+   ]
+  },
+  "transfer_to_human_agents": {
+   "side": "agent",
+   "description": "Transfer the user to a human agent, with a summary of the user's issue.",
+   "params": [
+    {
+     "name": "summary",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "A summary of the user's issue.",
+     "children": []
+    }
+   ]
+  },
+  "update_reservation_baggages": {
+   "side": "agent",
+   "description": "Update the baggage information of a reservation.",
+   "params": [
+    {
+     "name": "reservation_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The reservation ID, such as 'ZFA04Y'",
+     "children": []
+    },
+    {
+     "name": "total_baggages",
+     "type": "integer",
+     "required": true,
+     "enum": [],
+     "description": "The updated total number of baggage items included in the reservation.",
+     "children": []
+    },
+    {
+     "name": "nonfree_baggages",
+     "type": "integer",
+     "required": true,
+     "enum": [],
+     "description": "The updated number of non-free baggage items included in the reservation.",
+     "children": []
+    },
+    {
+     "name": "payment_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The payment id stored in user profile, such as 'credit_card_7815826', 'gift_card_7815826', 'certificate_7815826'.",
+     "children": []
+    }
+   ]
+  },
+  "update_reservation_flights": {
+   "side": "agent",
+   "description": "Update the flight information of a reservation.",
+   "params": [
+    {
+     "name": "reservation_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The reservation ID, such as 'ZFA04Y'.",
+     "children": []
+    },
+    {
+     "name": "cabin",
+     "type": "CabinClass",
+     "required": true,
+     "enum": [],
+     "description": "The cabin class of the reservation",
+     "children": []
+    },
+    {
+     "name": "flights",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "An array of objects containing details about each piece of flight in the ENTIRE new reservation. Even if the a flight segment is not changed, it should still be included in the array.",
+     "children": [
+      {
+       "name": "flight_number",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "date",
+       "type": "string",
+       "required": true,
+       "enum": []
+      }
+     ]
+    },
+    {
+     "name": "payment_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The payment id stored in user profile, such as 'credit_card_7815826', 'gift_card_7815826', 'certificate_7815826'.",
+     "children": []
+    }
+   ]
+  },
+  "update_reservation_passengers": {
+   "side": "agent",
+   "description": "Update the passenger information of a reservation.",
+   "params": [
+    {
+     "name": "reservation_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The reservation ID, such as 'ZFA04Y'.",
+     "children": []
+    },
+    {
+     "name": "passengers",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "An array of objects containing details about each passenger.",
+     "children": [
+      {
+       "name": "first_name",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "last_name",
+       "type": "string",
+       "required": true,
+       "enum": []
+      },
+      {
+       "name": "dob",
+       "type": "string",
+       "required": true,
+       "enum": []
+      }
+     ]
+    }
+   ]
+  },
+  "get_flight_status": {
+   "side": "agent",
+   "description": "Get the status of a flight.",
+   "params": [
+    {
+     "name": "flight_number",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The flight number.",
+     "children": []
+    },
+    {
+     "name": "date",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The date of the flight.",
+     "children": []
+    }
+   ]
+  }
+ },
+ "retail": {
+  "calculate": {
+   "side": "agent",
+   "description": "Calculate the result of a mathematical expression.",
+   "params": [
+    {
+     "name": "expression",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The mathematical expression to calculate, such as '2 + 2'. The expression can contain numbers, operators (+, -, *, /), parentheses, and spaces.",
+     "children": []
+    }
+   ]
+  },
+  "cancel_pending_order": {
+   "side": "agent",
+   "description": "Cancel a pending order. If the order is already processed or delivered,",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    },
+    {
+     "name": "reason",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The reason for cancellation, which should be either 'no longer needed' or 'ordered by mistake'.",
+     "children": []
+    }
+   ]
+  },
+  "exchange_delivered_order_items": {
+   "side": "agent",
+   "description": "Exchange items in a delivered order to new items of the same product type.",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    },
+    {
+     "name": "item_ids",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "The item ids to be exchanged, each such as '1008292230'. There could be duplicate items in the list.",
+     "children": []
+    },
+    {
+     "name": "new_item_ids",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "The item ids to be exchanged for, each such as '1008292230'.",
+     "children": []
+    },
+    {
+     "name": "payment_method_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The payment method id to pay or receive refund for the item price difference,",
+     "children": []
+    }
+   ]
+  },
+  "find_user_id_by_name_zip": {
+   "side": "agent",
+   "description": "Find user id by first name, last name, and zip code. If the user is not found, the function",
+   "params": [
+    {
+     "name": "first_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The first name of the customer, such as 'John'.",
+     "children": []
+    },
+    {
+     "name": "last_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The last name of the customer, such as 'Doe'.",
+     "children": []
+    },
+    {
+     "name": "zip",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The zip code of the customer, such as '12345'.",
+     "children": []
+    }
+   ]
+  },
+  "find_user_id_by_email": {
+   "side": "agent",
+   "description": "Find user id by email. If the user is not found, the function will return an error message.",
+   "params": [
+    {
+     "name": "email",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The email of the user, such as 'something@example.com'.",
+     "children": []
+    }
+   ]
+  },
+  "get_order_details": {
+   "side": "agent",
+   "description": "Get the status and details of an order.",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    }
+   ]
+  },
+  "get_product_details": {
+   "side": "agent",
+   "description": "Get the inventory details of a product.",
+   "params": [
+    {
+     "name": "product_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The product id, such as '6086499569'. Be careful the product id is different from the item id.",
+     "children": []
+    }
+   ]
+  },
+  "get_item_details": {
+   "side": "agent",
+   "description": "Get the inventory details of an item.",
+   "params": [
+    {
+     "name": "item_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The item id, such as '6086499569'. Be careful the item id is different from the product id.",
+     "children": []
+    }
+   ]
+  },
+  "get_user_details": {
+   "side": "agent",
+   "description": "Get the details of a user, including their orders.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The user id, such as 'sara_doe_496'.",
+     "children": []
+    }
+   ]
+  },
+  "list_all_product_types": {
+   "side": "agent",
+   "description": "List the name and product id of all product types.",
+   "params": []
+  },
+  "modify_pending_order_address": {
+   "side": "agent",
+   "description": "Modify the shipping address of a pending order. The agent needs to explain the modification detail and ask for explicit user confirmation (yes/no) to proceed.",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    },
+    {
+     "name": "address1",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The first line of the address, such as '123 Main St'.",
+     "children": []
+    },
+    {
+     "name": "address2",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The second line of the address, such as 'Apt 1' or ''.",
+     "children": []
+    },
+    {
+     "name": "city",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The city, such as 'San Francisco'.",
+     "children": []
+    },
+    {
+     "name": "state",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The state, such as 'CA'.",
+     "children": []
+    },
+    {
+     "name": "country",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The country, such as 'USA'.",
+     "children": []
+    },
+    {
+     "name": "zip",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The zip code, such as '12345'.",
+     "children": []
+    }
+   ]
+  },
+  "modify_pending_order_items": {
+   "side": "agent",
+   "description": "Modify items in a pending order to new items of the same product type. For a pending order, this function can only be called once. The agent needs to explain the exchange detail and ask for explicit user confirmation (yes/no) to proceed.",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    },
+    {
+     "name": "item_ids",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "The item ids to be modified, each such as '1008292230'. There could be duplicate items in the list.",
+     "children": []
+    },
+    {
+     "name": "new_item_ids",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "The item ids to be modified for, each such as '1008292230'. There could be duplicate items in the list. Each new item id should match the item id in the same position and be of the same product.",
+     "children": []
+    },
+    {
+     "name": "payment_method_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The payment method id to pay or receive refund for the item price difference, such as 'gift_card_0000000' or 'credit_card_0000000'. These can be looked up from the user or order details.",
+     "children": []
+    }
+   ]
+  },
+  "modify_pending_order_payment": {
+   "side": "agent",
+   "description": "Modify the payment method of a pending order. The agent needs to explain the modification detail and ask for explicit user confirmation (yes/no) to proceed.",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    },
+    {
+     "name": "payment_method_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The payment method id to pay or receive refund for the item price difference, such as 'gift_card_0000000' or 'credit_card_0000000'. These can be looked up from the user or order details.",
+     "children": []
+    }
+   ]
+  },
+  "modify_user_address": {
+   "side": "agent",
+   "description": "Modify the default address of a user. The agent needs to explain the modification detail and ask for explicit user confirmation (yes/no) to proceed.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The user id, such as 'sara_doe_496'.",
+     "children": []
+    },
+    {
+     "name": "address1",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The first line of the address, such as '123 Main St'.",
+     "children": []
+    },
+    {
+     "name": "address2",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The second line of the address, such as 'Apt 1' or ''.",
+     "children": []
+    },
+    {
+     "name": "city",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The city, such as 'San Francisco'.",
+     "children": []
+    },
+    {
+     "name": "state",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The state, such as 'CA'.",
+     "children": []
+    },
+    {
+     "name": "country",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The country, such as 'USA'.",
+     "children": []
+    },
+    {
+     "name": "zip",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The zip code, such as '12345'.",
+     "children": []
+    }
+   ]
+  },
+  "return_delivered_order_items": {
+   "side": "agent",
+   "description": "Return some items of a delivered order.",
+   "params": [
+    {
+     "name": "order_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The order id, such as '#W0000000'. Be careful there is a '#' symbol at the beginning of the order id.",
+     "children": []
+    },
+    {
+     "name": "item_ids",
+     "type": "array",
+     "required": true,
+     "enum": [],
+     "description": "The item ids to be returned, each such as '1008292230'. There could be duplicate items in the list.",
+     "children": []
+    },
+    {
+     "name": "payment_method_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The payment method id to pay or receive refund for the item price difference, such as 'gift_card_0000000' or 'credit_card_0000000'.",
+     "children": []
+    }
+   ]
+  },
+  "transfer_to_human_agents": {
+   "side": "agent",
+   "description": "Transfer the user to a human agent, with a summary of the user's issue.",
+   "params": [
+    {
+     "name": "summary",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "A summary of the user's issue.",
+     "children": []
+    }
+   ]
+  }
+ },
+ "telecom": {
+  "get_customer_by_phone": {
+   "side": "agent",
+   "description": "Finds a customer by their primary contact or line phone number.",
+   "params": [
+    {
+     "name": "phone_number",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The phone number to search for.",
+     "children": []
+    }
+   ]
+  },
+  "get_customer_by_id": {
+   "side": "agent",
+   "description": "Retrieves a customer directly by their unique ID.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The unique identifier of the customer.",
+     "children": []
+    }
+   ]
+  },
+  "get_customer_by_name": {
+   "side": "agent",
+   "description": "Searches for customers by name and DOB. May return multiple matches if names are similar,",
+   "params": [
+    {
+     "name": "full_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The full name of the customer.",
+     "children": []
+    },
+    {
+     "name": "dob",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Date of birth for verification, in the format YYYY-MM-DD.",
+     "children": []
+    }
+   ]
+  },
+  "get_details_by_id": {
+   "side": "agent",
+   "description": "Retrieves the details for a given ID.",
+   "params": [
+    {
+     "name": "id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the object to retrieve.",
+     "children": []
+    }
+   ]
+  },
+  "suspend_line": {
+   "side": "agent",
+   "description": "Suspends a specific line (max 6 months).",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the line.",
+     "children": []
+    },
+    {
+     "name": "line_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the line to suspend.",
+     "children": []
+    },
+    {
+     "name": "reason",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Reason for suspension.",
+     "children": []
+    }
+   ]
+  },
+  "resume_line": {
+   "side": "agent",
+   "description": "Resumes a suspended line.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the line.",
+     "children": []
+    },
+    {
+     "name": "line_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the line to resume.",
+     "children": []
+    }
+   ]
+  },
+  "get_bills_for_customer": {
+   "side": "agent",
+   "description": "Retrieves a list of the customer's bills, most recent first.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer.",
+     "children": []
+    },
+    {
+     "name": "limit",
+     "type": "integer",
+     "required": false,
+     "enum": [],
+     "description": "Maximum number of bills to return.",
+     "children": []
+    }
+   ]
+  },
+  "send_payment_request": {
+   "side": "agent",
+   "description": "Sends a payment request to the customer for a specific bill.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the bill.",
+     "children": []
+    },
+    {
+     "name": "bill_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the bill to send payment request for.",
+     "children": []
+    }
+   ]
+  },
+  "get_data_usage": {
+   "side": "agent",
+   "description": "Retrieves current billing cycle data usage for a line, including data",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the line.",
+     "children": []
+    },
+    {
+     "name": "line_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the line to check usage for.",
+     "children": []
+    }
+   ]
+  },
+  "enable_roaming": {
+   "side": "agent",
+   "description": "Enables international roaming on a line.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the line.",
+     "children": []
+    },
+    {
+     "name": "line_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the line to enable roaming for.",
+     "children": []
+    }
+   ]
+  },
+  "disable_roaming": {
+   "side": "agent",
+   "description": "Disables international roaming on a line.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the line.",
+     "children": []
+    },
+    {
+     "name": "line_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the line to disable roaming for.",
+     "children": []
+    }
+   ]
+  },
+  "transfer_to_human_agents": {
+   "side": "agent",
+   "description": "Transfer the user to a human agent, with a summary of the user's issue.",
+   "params": [
+    {
+     "name": "summary",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "A summary of the user's issue.",
+     "children": []
+    }
+   ]
+  },
+  "refuel_data": {
+   "side": "agent",
+   "description": "Refuels data for a specific line, adding to the customer's bill.",
+   "params": [
+    {
+     "name": "customer_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the customer who owns the line.",
+     "children": []
+    },
+    {
+     "name": "line_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "ID of the line to refuel data for.",
+     "children": []
+    },
+    {
+     "name": "gb_amount",
+     "type": "number",
+     "required": true,
+     "enum": [],
+     "description": "Amount of data to add in gigabytes.",
+     "children": []
+    }
+   ]
+  },
+  "check_status_bar": {
+   "side": "user",
+   "description": "Shows what icons are currently visible in your phone's status bar (the area at the top of the screen). Displays network signal strength, mobile data status (enabled, disabled, data saver), Wi-Fi status, and battery level.",
+   "params": []
+  },
+  "check_network_status": {
+   "side": "user",
+   "description": "Checks your phone's connection status to cellular networks and Wi-Fi. Shows airplane mode status, signal strength, network type, whether mobile data is enabled, and whether data roaming is enabled.",
+   "params": []
+  },
+  "check_network_mode_preference": {
+   "side": "user",
+   "description": "Shows the current network mode preference.",
+   "params": []
+  },
+  "set_network_mode_preference": {
+   "side": "user",
+   "description": "Changes the type of cellular network your phone prefers to connect to (e.g., 5G, LTE/4G, 3G). Higher-speed networks (LTE/5G) provide faster data but may use more battery.",
+   "params": [
+    {
+     "name": "mode",
+     "type": "NetworkModePreference",
+     "required": true,
+     "enum": [],
+     "description": "",
+     "children": []
+    }
+   ]
+  },
+  "run_speed_test": {
+   "side": "user",
+   "description": "Measures your current internet connection speed (download speed). Provides information about connection quality and what activities it can support.",
+   "params": []
+  },
+  "toggle_airplane_mode": {
+   "side": "user",
+   "description": "Toggles Airplane Mode ON or OFF. When ON, it disconnects all wireless communications including cellular, Wi-Fi, and Bluetooth.",
+   "params": []
+  },
+  "check_sim_status": {
+   "side": "user",
+   "description": "Checks if your SIM card is working correctly and displays its current status. Shows if the SIM is active, missing, or locked with a PIN or PUK code.",
+   "params": []
+  },
+  "reseat_sim_card": {
+   "side": "user",
+   "description": "Simulates removing and reinserting your SIM card. This can help resolve recognition issues.",
+   "params": []
+  },
+  "toggle_data": {
+   "side": "user",
+   "description": "Toggles your phone's mobile data connection ON or OFF. Controls whether your phone can use cellular data for internet access when Wi-Fi is unavailable.",
+   "params": []
+  },
+  "toggle_roaming": {
+   "side": "user",
+   "description": "Toggles Data Roaming ON or OFF. When ON, your phone can use data networks in areas outside your carrier's coverage.",
+   "params": []
+  },
+  "check_data_restriction_status": {
+   "side": "user",
+   "description": "Checks if your phone has any data-limiting features active. Shows if Data Saver mode is on.",
+   "params": []
+  },
+  "toggle_data_saver_mode": {
+   "side": "user",
+   "description": "Toggles Data Saver mode ON or OFF. When ON, it reduces data usage, which may affect data speed.",
+   "params": []
+  },
+  "check_apn_settings": {
+   "side": "user",
+   "description": "Checks the technical APN settings your phone uses to connect to your carrier's mobile data network. Shows current APN name and MMSC URL for picture messaging.",
+   "params": []
+  },
+  "set_apn_settings": {
+   "side": "user",
+   "description": "Sets the APN settings for the phone.",
+   "params": [
+    {
+     "name": "apn_settings",
+     "type": "APNSettings",
+     "required": true,
+     "enum": [],
+     "description": "",
+     "children": []
+    }
+   ]
+  },
+  "reset_apn_settings": {
+   "side": "user",
+   "description": "Resets your APN settings to the default settings.",
+   "params": []
+  },
+  "check_wifi_status": {
+   "side": "user",
+   "description": "Checks your Wi-Fi connection status. Shows if Wi-Fi is turned on, which network you're connected to (if any), and the signal strength.",
+   "params": []
+  },
+  "toggle_wifi": {
+   "side": "user",
+   "description": "Toggles your phone's Wi-Fi radio ON or OFF. Controls whether your phone can discover and connect to wireless networks for internet access.",
+   "params": []
+  },
+  "check_wifi_calling_status": {
+   "side": "user",
+   "description": "Checks if Wi-Fi Calling is enabled on your device. This feature allows you to make and receive calls over a Wi-Fi network instead of using the cellular network.",
+   "params": []
+  },
+  "toggle_wifi_calling": {
+   "side": "user",
+   "description": "Toggles Wi-Fi Calling ON or OFF. This feature allows you to make and receive calls over Wi-Fi instead of the cellular network, which can help in areas with weak cellular signal.",
+   "params": []
+  },
+  "check_vpn_status": {
+   "side": "user",
+   "description": "Checks if you're using a VPN (Virtual Private Network) connection. Shows if a VPN is active, connected, and displays any available connection details.",
+   "params": []
+  },
+  "connect_vpn": {
+   "side": "user",
+   "description": "Connects to your VPN (Virtual Private Network).",
+   "params": []
+  },
+  "disconnect_vpn": {
+   "side": "user",
+   "description": "Disconnects any active VPN (Virtual Private Network) connection. Stops routing your internet traffic through a VPN server, which might affect connection speed or access to content.",
+   "params": []
+  },
+  "check_installed_apps": {
+   "side": "user",
+   "description": "Returns the name of all installed apps on the phone.",
+   "params": []
+  },
+  "check_app_status": {
+   "side": "user",
+   "description": "Checks detailed information about a specific app. Shows its permissions and background data usage settings.",
+   "params": [
+    {
+     "name": "app_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "",
+     "children": []
+    }
+   ]
+  },
+  "check_app_permissions": {
+   "side": "user",
+   "description": "Checks what permissions a specific app currently has. Shows if the app has access to features like storage, camera, location, etc.",
+   "params": [
+    {
+     "name": "app_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "",
+     "children": []
+    }
+   ]
+  },
+  "grant_app_permission": {
+   "side": "user",
+   "description": "Gives a specific permission to an app (like access to storage, camera, or location). Required for some app functions to work properly.",
+   "params": [
+    {
+     "name": "app_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The name of the app to grant the permission to.",
+     "children": []
+    },
+    {
+     "name": "permission",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The permission to grant, should be lowercase.",
+     "children": []
+    }
+   ]
+  },
+  "can_send_mms": {
+   "side": "user",
+   "description": "Checks if the default messaging app can send MMS messages.",
+   "params": []
+  },
+  "reboot_device": {
+   "side": "user",
+   "description": "Restarts your phone completely. This can help resolve many temporary software glitches by refreshing all running services and connections.",
+   "params": []
+  },
+  "check_payment_request": {
+   "side": "user",
+   "description": "Checks if the agent has sent you a payment request.",
+   "params": []
+  },
+  "make_payment": {
+   "side": "user",
+   "description": "Makes a payment for the bill that the agent has sent you.",
+   "params": []
+  }
+ },
+ "banking_knowledge": {
+  "KB_search": {
+   "side": "agent",
+   "description": "Search the knowledge base for relevant documents.",
+   "params": [
+    {
+     "name": "query",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The search query to find relevant documents",
+     "children": []
+    }
+   ]
+  },
+  "grep": {
+   "side": "agent",
+   "description": "Search for a regex pattern in all knowledge base documents.",
+   "params": [
+    {
+     "name": "pattern",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The regex pattern to search for (e.g., 'credit.*card', 'fee|charge')",
+     "children": []
+    }
+   ]
+  },
+  "KB_search_bm25": {
+   "side": "agent",
+   "description": "Search the knowledge base using BM25 sparse retrieval.",
+   "params": [
+    {
+     "name": "query",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The search query to find relevant documents.",
+     "children": []
+    },
+    {
+     "name": "k",
+     "type": "integer",
+     "required": false,
+     "enum": [],
+     "description": "Maximum number of documents to return (default 10).",
+     "children": []
+    }
+   ]
+  },
+  "KB_search_dense": {
+   "side": "agent",
+   "description": "Search the knowledge base using dense embedding retrieval.",
+   "params": [
+    {
+     "name": "query",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The search query to find relevant documents.",
+     "children": []
+    },
+    {
+     "name": "k",
+     "type": "integer",
+     "required": false,
+     "enum": [],
+     "description": "Maximum number of documents to return (default 10).",
+     "children": []
+    }
+   ]
+  },
+  "shell": {
+   "side": "agent",
+   "description": "Execute a shell command in the knowledge base directory.",
+   "params": [
+    {
+     "name": "command",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The shell command to execute (e.g., \"ls -la\", \"grep -r 'credit card' .\", \"cat INDEX.txt\")",
+     "children": []
+    }
+   ]
+  },
+  "rewrite_context": {
+   "side": "agent",
+   "description": "Replace your working context with a new summary or condensed version.",
+   "params": [
+    {
+     "name": "new_context",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The summarized or rewritten context to store",
+     "children": []
+    }
+   ]
+  },
+  "transfer_to_human_agents": {
+   "side": "agent",
+   "description": "Transfer the user to a human agent.",
+   "params": [
+    {
+     "name": "summary",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "A summary of the user's issue and what was attempted before transfer.",
+     "children": []
+    },
+    {
+     "name": "reason",
+     "type": "TransferReasonLiteral",
+     "required": false,
+     "enum": [],
+     "description": "The specific reason code for the transfer.",
+     "children": []
+    }
+   ]
+  },
+  "get_current_time": {
+   "side": "agent",
+   "description": "Get the current time. Use this to get the current timestamp for logging verification records.",
+   "params": []
+  },
+  "get_user_information_by_id": {
+   "side": "agent",
+   "description": "Get the information (date of birth, email, phone number, address) for a user by their user id.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user",
+     "children": []
+    }
+   ]
+  },
+  "get_user_information_by_name": {
+   "side": "agent",
+   "description": "Get the information (date of birth, email, phone number, address) for a user by their name. Case Sensitive.",
+   "params": [
+    {
+     "name": "customer_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The name of the user",
+     "children": []
+    }
+   ]
+  },
+  "get_user_information_by_email": {
+   "side": "agent",
+   "description": "Get the information (date of birth, email, phone number, address) for a user by their email.",
+   "params": [
+    {
+     "name": "email",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The email of the user",
+     "children": []
+    }
+   ]
+  },
+  "change_user_email": {
+   "side": "agent",
+   "description": "Change the email address for a user.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user whose email should be changed",
+     "children": []
+    },
+    {
+     "name": "new_email",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The new email address to set for the user",
+     "children": []
+    }
+   ]
+  },
+  "get_referrals_by_user": {
+   "side": "agent",
+   "description": "Get all referrals made by a user.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user (referrer) to look up referrals for",
+     "children": []
+    }
+   ]
+  },
+  "get_credit_card_transactions_by_user": {
+   "side": "agent",
+   "description": "Get all credit card transactions for a user.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user to look up transactions for",
+     "children": []
+    }
+   ]
+  },
+  "get_credit_card_accounts_by_user": {
+   "side": "agent",
+   "description": "Get all credit card accounts for a user.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The ID of the user to look up credit card accounts for",
+     "children": []
+    }
+   ]
+  },
+  "log_verification": {
+   "side": "agent",
+   "description": "Log a verification record after successfully verifying a user's identity.",
+   "params": [
+    {
+     "name": "name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The verified user's full name",
+     "children": []
+    },
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The verified user's ID",
+     "children": []
+    },
+    {
+     "name": "address",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The verified user's address",
+     "children": []
+    },
+    {
+     "name": "email",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The verified user's email",
+     "children": []
+    },
+    {
+     "name": "phone_number",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The verified user's phone number",
+     "children": []
+    },
+    {
+     "name": "date_of_birth",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The verified user's date of birth (MM/DD/YYYY format)",
+     "children": []
+    },
+    {
+     "name": "time_verified",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The timestamp of the verification (e.g., \"2025-11-14 03:40:00 EST\")",
+     "children": []
+    }
+   ]
+  },
+  "give_discoverable_user_tool": {
+   "side": "agent",
+   "description": "Pass a tool to the user so they can execute it themselves.",
+   "params": [
+    {
+     "name": "discoverable_tool_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The name of the discoverable tool (e.g., \"open_webpage\", \"navigate_to_section\")",
+     "children": []
+    },
+    {
+     "name": "arguments",
+     "type": "string",
+     "required": false,
+     "enum": [],
+     "description": "JSON string of arguments for the tool (e.g., '{\"url\": \"https://example.com\"}')",
+     "children": []
+    }
+   ]
+  },
+  "unlock_discoverable_agent_tool": {
+   "side": "agent",
+   "description": "Unlock an agent discoverable tool that was found in the knowledge base.",
+   "params": [
+    {
+     "name": "agent_tool_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The name of the agent discoverable tool to unlock",
+     "children": []
+    }
+   ]
+  },
+  "call_discoverable_agent_tool": {
+   "side": "agent",
+   "description": "Call an agent discoverable tool that you have previously unlocked.",
+   "params": [
+    {
+     "name": "agent_tool_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The name of the agent discoverable tool to call",
+     "children": []
+    },
+    {
+     "name": "arguments",
+     "type": "string",
+     "required": false,
+     "enum": [],
+     "description": "JSON string of arguments for the tool (e.g., '{\"user_id\": \"abc123\"}')",
+     "children": []
+    }
+   ]
+  },
+  "list_discoverable_agent_tools": {
+   "side": "agent",
+   "description": "List all agent discoverable tools that you have called.",
+   "params": []
+  },
+  "apply_for_credit_card": {
+   "side": "agent",
+   "description": "Apply for a credit card.",
+   "params": [
+    {
+     "name": "card_type",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Type of credit card",
+     "children": []
+    },
+    {
+     "name": "customer_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Full legal name",
+     "children": []
+    },
+    {
+     "name": "annual_income",
+     "type": "number",
+     "required": true,
+     "enum": [],
+     "description": "Annual income in USD",
+     "children": []
+    },
+    {
+     "name": "rho_bank_subscription",
+     "type": "boolean",
+     "required": false,
+     "enum": [],
+     "description": "Whether user has Rho-Bank+ subscription",
+     "children": []
+    }
+   ]
+  },
+  "submit_referral": {
+   "side": "agent",
+   "description": "Submit a referral request to refer someone to open an account.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Your user ID (the referrer)",
+     "children": []
+    },
+    {
+     "name": "account_type",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The type of account you are referring someone to open",
+     "children": []
+    }
+   ]
+  },
+  "call_discoverable_user_tool": {
+   "side": "agent",
+   "description": "Call a tool that was given to you by the agent.",
+   "params": [
+    {
+     "name": "discoverable_tool_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "The name of the discoverable tool to call (e.g., \"open_webpage\")",
+     "children": []
+    },
+    {
+     "name": "arguments",
+     "type": "string",
+     "required": false,
+     "enum": [],
+     "description": "JSON string of arguments for the tool (e.g., '{\"url\": \"https://example.com\"}')",
+     "children": []
+    }
+   ]
+  },
+  "list_discoverable_user_tools": {
+   "side": "agent",
+   "description": "List all tools that have been given to you by the agent.",
+   "params": []
+  },
+  "request_human_agent_transfer": {
+   "side": "agent",
+   "description": "Request to be transferred to a human agent for assistance.",
+   "params": []
+  },
+  "submit_transaction": {
+   "side": "agent",
+   "description": "Submit a credit card transaction.",
+   "params": [
+    {
+     "name": "user_id",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Your user ID",
+     "children": []
+    },
+    {
+     "name": "credit_card_type",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Type of credit card used (e.g., \"Bronze Rewards Card\", \"Gold Rewards Card\")",
+     "children": []
+    },
+    {
+     "name": "merchant_name",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Name of the merchant where the purchase was made",
+     "children": []
+    },
+    {
+     "name": "amount",
+     "type": "number",
+     "required": true,
+     "enum": [],
+     "description": "Transaction amount in USD (e.g., 127.43)",
+     "children": []
+    },
+    {
+     "name": "category",
+     "type": "string",
+     "required": true,
+     "enum": [],
+     "description": "Transaction category (e.g., \"Groceries\", \"Dining\", \"Travel\", \"Software\", \"Entertainment\", \"Utilities\", \"Shopping\")",
+     "children": []
+    }
+   ]
+  }
+ }
+}

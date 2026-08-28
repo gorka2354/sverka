@@ -17,8 +17,9 @@
                          "messages": [ { "role", "turn_idx", "content",
                                          "tool_calls": [ {"id","name","arguments","requestor"} ] } ] } ] }
 
-`tool_defs` в файлах пуст, поэтому имена доступных агенту инструментов берутся из
-`model/tau2_tool_names.json` — выгрузки из репозитория tau2-bench (MIT).
+`tool_defs` в файлах пуст, поэтому схемы инструментов берутся из
+`resources/tau2_tool_schemas.json` — выгрузки исходников tau2-bench (MIT), сделанной
+разбором через ast: имя, тип, обязательность, вложенность на один уровень.
 
 **Прокси-оракул.** Разметки на уровне хода в этих файлах нет (поле `review` у Sierra всегда
 пустое). Но `reward == 1.0` означает, что задача решена: конечное состояние базы совпало
@@ -38,6 +39,7 @@ from typing import Iterator
 from sverka.transcript import (
     ASSISTANT,
     USER,
+    ParamSpec,
     ParseHealth,
     ToolCall,
     ToolSchema,
@@ -47,10 +49,54 @@ from sverka.transcript import (
 
 # Файл лежит ВНУТРИ пакета, а не в `model/`, и это не вкус.
 # Платформа выполняет `pip install .`, после чего пакет живёт в site-packages,
-# и путь вида `parents[2] / "model"` указывает мимо. Список пользовательских
-# инструментов тогда молча становится пустым, а гейт теряет часть обоснования —
-# отказ тихий, заметный только по исчезнувшей строке в evidence.
-_TOOL_NAMES_PATH = Path(__file__).resolve().parent / "resources" / "tau2_tool_names.json"
+# и путь вида `parents[2] / "model"` указывает мимо. Список инструментов тогда молча
+# становится пустым, а гейт теряет часть обоснования — отказ тихий, заметный только
+# по исчезнувшей строке в evidence.
+_SCHEMAS_PATH = Path(__file__).resolve().parent / "resources" / "tau2_tool_schemas.json"
+
+
+def _load_raw_schemas() -> dict:
+    if not _SCHEMAS_PATH.exists():
+        return {}
+    return json.loads(_SCHEMAS_PATH.read_text(encoding="utf-8"))
+
+
+def load_tool_schemas(domain: str) -> dict[str, ToolSchema]:
+    """Схемы инструментов агента — с параметрами, обязательностью и вложенностью.
+
+    Извлечены разбором исходников tau2-bench (MIT): в самих файлах траекторий поле
+    `tool_defs` пусто, а без параметров рекурсивная проверка аргументов на добытых
+    данных не работает вовсе.
+    """
+    out: dict[str, ToolSchema] = {}
+    for name, t in (_load_raw_schemas().get(domain) or {}).items():
+        if t.get("side") != "agent":
+            continue
+        params: list[ParamSpec] = []
+        for p in t.get("params", []):
+            params.append(
+                ParamSpec(
+                    name=p["name"],
+                    type=p.get("type", ""),
+                    required=bool(p.get("required")),
+                    enum=tuple(p.get("enum") or ()),
+                    description=p.get("description", ""),
+                )
+            )
+            for c in p.get("children", []):
+                params.append(
+                    ParamSpec(
+                        name=c["name"],
+                        type=c.get("type", ""),
+                        required=bool(c.get("required")),
+                        enum=tuple(c.get("enum") or ()),
+                        description=c.get("description", ""),
+                        depth=1,
+                        parent=p["name"],
+                    )
+                )
+        out[name] = ToolSchema(name, t.get("description", ""), tuple(params))
+    return out
 
 
 @dataclass(frozen=True)
@@ -72,10 +118,11 @@ class TrajectoryTurn:
 
 
 def load_agent_tool_names() -> dict[str, list[str]]:
-    if not _TOOL_NAMES_PATH.exists():
-        return {}
-    data = json.loads(_TOOL_NAMES_PATH.read_text(encoding="utf-8"))
-    return {k: v.get("agent", []) for k, v in data.items() if not k.startswith("_")}
+    return {
+        dom: sorted(n for n, t in tools.items() if t.get("side") == "agent")
+        for dom, tools in _load_raw_schemas().items()
+        if not dom.startswith("_") and isinstance(tools, dict)
+    }
 
 
 def _mk_call(tc: dict) -> ToolCall:
@@ -91,19 +138,18 @@ def _mk_call(tc: dict) -> ToolCall:
 
 
 def _build_transcript(
-    policy: str, tool_names: list[str], history: list[dict], id_to_name: dict[str, str]
+    policy: str, schemas: dict[str, ToolSchema], history: list[dict], id_to_name: dict[str, str]
 ) -> Transcript:
     """Собрать транскрипт истории до проверяемого хода.
 
-    Схемы инструментов здесь имеют только имена: в файлах траекторий параметров нет.
-    Этого достаточно для проверок уровня «такой инструмент вообще доступен», и намеренно
-    недостаточно для проверки аргументов — её на этом источнике вести нельзя, и лучше
-    пусть это будет видно из типа данных, чем из сноски.
+    Схемы приходят из выгрузки исходников tau2-bench, а не из файла траектории: в самих
+    файлах `tool_defs` пуст. Благодаря этому на добытых данных работает и проверка
+    аргументов, а не только проверка «такой инструмент вообще доступен».
     """
-    tools = {n: ToolSchema(n, "", ()) for n in tool_names}
+    tools = schemas
     turns: list[Turn] = []
     system = f"<policy>\n{policy}\n</policy>\n[AVAILABLE TOOLS]\n" + "\n".join(
-        f"- {n} — (схема недоступна в траекториях)" for n in tool_names
+        f"- {n} — {t.description}" for n, t in sorted(tools.items())
     )
     turns.append(Turn(role="SYSTEM", number=None, text=system))
 
@@ -168,7 +214,7 @@ def iter_turns(
     env = info.get("environment_info", {}) or {}
     domain = str(env.get("domain_name") or "")
     policy = str(env.get("policy") or "")
-    tool_names = load_agent_tool_names().get(domain, [])
+    schemas = load_tool_schemas(domain)
 
     sims = data.get("simulations") or []
     if max_sims is not None:
@@ -194,7 +240,7 @@ def iter_turns(
                 continue
             if any(c.requestor == USER for c in calls):
                 continue  # ход пользователя, а не агента
-            tr = _build_transcript(policy, tool_names, messages[:i], id_to_name)
+            tr = _build_transcript(policy, schemas, messages[:i], id_to_name)
             turn = Turn(
                 role=ASSISTANT,
                 number=m.get("turn_idx") if isinstance(m.get("turn_idx"), int) else None,

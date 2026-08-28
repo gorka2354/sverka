@@ -60,7 +60,7 @@ MUTATING_PREFIXES = (
 # и путь вида `parents[2] / "model"` указывает мимо. Список пользовательских
 # инструментов тогда молча становится пустым, а гейт теряет часть обоснования —
 # отказ тихий, заметный только по исчезнувшей строке в evidence.
-_TOOL_NAMES_PATH = Path(__file__).resolve().parent / "resources" / "tau2_tool_names.json"
+_SCHEMAS_PATH = Path(__file__).resolve().parent / "resources" / "tau2_tool_schemas.json"
 
 
 def load_known_user_tools() -> dict[str, set[str]]:
@@ -75,13 +75,13 @@ def load_known_user_tools() -> dict[str, set[str]]:
     полностью: `can_send_mms` и `check_payment_request` вызываются пользователем, но в
     нумерованный перечень политики не входят.
     """
-    if not _TOOL_NAMES_PATH.exists():
+    if not _SCHEMAS_PATH.exists():
         return {}
-    data = json.loads(_TOOL_NAMES_PATH.read_text(encoding="utf-8"))
+    data = json.loads(_SCHEMAS_PATH.read_text(encoding="utf-8"))
     return {
-        dom: set(v.get("user", []))
-        for dom, v in data.items()
-        if not dom.startswith("_") and isinstance(v, dict)
+        dom: {name for name, t in tools.items() if t.get("side") == "user"}
+        for dom, tools in data.items()
+        if not dom.startswith("_") and isinstance(tools, dict)
     }
 
 
