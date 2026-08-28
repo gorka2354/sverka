@@ -21,6 +21,11 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Списки имён инструментов по доменам едут вместе с пакетом: без них
+# `pip install .` установит код, который не найдёт свои данные.
+[tool.setuptools.package-data]
+sverka = ["resources/*.json"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
