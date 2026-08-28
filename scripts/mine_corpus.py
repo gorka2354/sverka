@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import collections
 import csv
+import gc
 import sys
 from pathlib import Path
 
@@ -75,16 +76,37 @@ def main() -> int:
              if f.stat().st_size <= args.max_mb * 1e6][: args.limit_files]
     print(f"файлов: {len(files)}")
 
-    rows: list[dict] = []
     stats: collections.Counter = collections.Counter()
+    by_dom: collections.Counter = collections.Counter()
+    convs: set[str] = set()
+    n_rows = n_pos = n_cand = 0
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(out, "w", encoding="utf-8", newline="")
+    writer = csv.DictWriter(
+        fh,
+        fieldnames=["id", "prompt", "response", "label", "label_source", "gates",
+                    "domain", "reward", "source_file"],
+    )
+    writer.writeheader()
 
     for f in files:
-        for reward, base_label, base_source in (
-            (1.0, 0, "solved_no_gate"),
-            (0.0, 1, "failed_gate_fired"),
-        ):
+        # Файл читается ОДИН раз, а не по разу на каждое значение reward.
+        # `[инцидент 28.08.2026]` Прежняя версия копила все строки в памяти и читала
+        # каждый файл дважды; на banking-файлах по 250 МБ процесс раздулся до 14.5 ГБ
+        # и был убит OOM-killer, не оставив ни строки результата. Теперь строки пишутся
+        # потоком, а разбор идёт одним проходом.
+        for reward, base_label, base_source in ((None, None, None),):
             try:
                 for tt in iter_turns(f, only_reward=reward, max_sims=args.max_sims):
+                    if tt.reward == 1.0:
+                        base_label, base_source = 0, "solved_no_gate"
+                    elif tt.reward == 0.0:
+                        base_label, base_source = 1, "failed_gate_fired"
+                    else:
+                        stats["пропущено: промежуточный reward"] += 1
+                        continue
                     # Метка вычисляется заново на КАЖДОМ ходу. Переиспользовать переменную
                     # цикла нельзя: одно присваивание внутри тела испортит все следующие
                     # итерации (проверено — девять позитивов молча превратились в кандидатов).
@@ -113,7 +135,7 @@ def main() -> int:
                     if len(prompt) > args.max_chars:
                         stats["пропущено: слишком длинный"] += 1
                         continue
-                    rows.append(
+                    writer.writerow(
                         {
                             "id": f"{tt.uid}#{tt.trial}",
                             "prompt": prompt,
@@ -126,31 +148,28 @@ def main() -> int:
                             "source_file": tt.source,
                         }
                     )
+                    n_rows += 1
+                    n_pos += label == 1
+                    n_cand += label == -1
+                    by_dom[tt.domain] += 1
+                    convs.add(tt.uid.split("::")[0])
                     stats[f"взято: {source}"] += 1
             except Exception as e:  # noqa: BLE001 — один битый файл не должен ронять сборку
-                print(f"  ПРОПУЩЕН {f.name[:50]}: {type(e).__name__}: {e}")
+                print(f"  ПРОПУЩЕН {f.name[:50]}: {type(e).__name__}: {e}", flush=True)
+        fh.flush()
+        gc.collect()  # banking-файлы по 250 МБ: без явной сборки пик растёт от файла к файлу
+        print(f"  {f.name[:62]:62s} строк всего: {n_rows}", flush=True)
 
+    fh.close()
     out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "w", encoding="utf-8", newline="") as fh:
-        w = csv.DictWriter(
-            fh,
-            fieldnames=["id", "prompt", "response", "label", "label_source", "gates",
-                        "domain", "reward", "source_file"],
-        )
-        w.writeheader()
-        w.writerows(rows)
 
-    pos = sum(1 for r in rows if r["label"] == 1)
-    cand = sum(1 for r in rows if r["label"] == -1)
-    print(f"\nзаписано {len(rows)} строк → {out}")
-    neg = len(rows) - pos - cand
-    print(f"  позитивов {pos}, негативов {neg}, кандидатов {cand}")
-    if pos + neg:
-        print(f"  доля позитива среди размеченных: {pos/(pos+neg):.3f}")
-    by_dom = collections.Counter(r["domain"] for r in rows)
+    print(f"\nзаписано {n_rows} строк → {out}")
+    neg = n_rows - n_pos - n_cand
+    print(f"  позитивов {n_pos}, негативов {neg}, кандидатов {n_cand}")
+    if n_pos + neg:
+        print(f"  доля позитива среди размеченных: {n_pos/(n_pos+neg):.3f}")
     print("  по доменам:", dict(by_dom))
-    print("  диалогов:", len({r["id"].split("::")[0] for r in rows}))
+    print("  диалогов:", len(convs))
     print("\nучёт отбраковки:")
     for k, v in stats.most_common():
         print(f"  {k}: {v}")
