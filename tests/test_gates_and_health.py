@@ -377,3 +377,107 @@ def test_validate_turn_skips_unknown_tools():
     """Вызов несуществующего инструмента — зона гейта A, дублировать его вердикт незачем."""
     turn = Turn(role=ASSISTANT, number=2, text="", tool_calls=(_call("no_such_tool", '{"x":1}'),))
     assert validate_turn(turn, {"book_reservation": _schema_with_nested()}) == []
+
+
+# --- круговая проверка рендера корпуса ---------------------------------------------
+
+import json as _json  # noqa: E402
+
+from sverka.tau2 import iter_turns, load_tool_schemas, render_example  # noqa: E402
+
+
+def _fake_trajectory(tmp_path):
+    """Минимальная траектория в формате публичных файлов tau2-bench."""
+    data = {
+        "info": {
+            "environment_info": {
+                "domain_name": "airline",
+                "policy": "# Airline Agent Policy\nThe current time is 2024-05-15 15:00:00 EST.",
+                "tool_defs": None,
+            }
+        },
+        "tasks": [],
+        "simulations": [
+            {
+                "id": "s1",
+                "task_id": "42",
+                "trial": 0,
+                "reward_info": {"reward": 1.0},
+                "messages": [
+                    {"role": "assistant", "turn_idx": 0, "content": "Hi!", "tool_calls": []},
+                    {"role": "user", "turn_idx": 1, "content": "Cancel EHGLP3", "tool_calls": []},
+                    {
+                        "role": "assistant", "turn_idx": 2, "content": None,
+                        "tool_calls": [{"id": "c1", "name": "get_reservation_details",
+                                        "arguments": {"reservation_id": "EHGLP3"},
+                                        "requestor": "assistant"}],
+                    },
+                    {"role": "tool", "turn_idx": 3, "id": "c1",
+                     "content": '{"cabin": "economy"}', "requestor": "assistant"},
+                    {
+                        "role": "assistant", "turn_idx": 4, "content": "Отменяю.",
+                        "tool_calls": [{"id": "c2", "name": "cancel_reservation",
+                                        "arguments": {"reservation_id": "EHGLP3"},
+                                        "requestor": "assistant"}],
+                    },
+                ],
+            }
+        ],
+    }
+    p = tmp_path / "traj.json"
+    p.write_text(_json.dumps(data), encoding="utf-8")
+    return p
+
+
+def test_schemas_carry_nesting_and_required_flags():
+    """Без вложенности рекурсивная проверка аргументов на добытых данных не работает.
+
+    Две ловушки в исходниках tau2-bench: аргументы объявлены как `List[Passenger | dict]`
+    (внутри подписки BinOp, а не имя), а поля Pydantic вида `Field(description=...)`
+    выглядят как значение по умолчанию, хотя параметр обязателен.
+    """
+    s = load_tool_schemas("airline")
+    assert "book_reservation" in s
+    kids = {p.name: p.required for p in s["book_reservation"].children("payment_methods")}
+    assert kids == {"payment_id": True, "amount": True}
+
+
+def test_render_then_parse_round_trip(tmp_path):
+    """Отрендерили → разобрали → получили то же самое.
+
+    Собранный корпус обязан проходить через ровно тот же парсер, что и боевые данные,
+    иначе он проверяет не то решение, которое поедет в сабмит.
+    """
+    turns = list(iter_turns(_fake_trajectory(tmp_path)))
+    assert turns, "конвертер не выдал ни одного хода агента с вызовом"
+    for tt in turns:
+        prompt, response = render_example(tt)
+        tr = parse_transcript(prompt, strict=False)
+        tn = parse_response(response, strict=False)
+        assert tr.health is not None and tr.health.ok, str(tr.health)
+        assert set(tr.tools) == set(tt.transcript.tools)
+        assert [c.name for c in tn.tool_calls] == [c.name for c in tt.turn.tool_calls]
+        assert tn.marker_found
+
+
+def test_render_round_trip_preserves_gate_verdict(tmp_path):
+    user_tools = load_known_user_tools()
+    for tt in iter_turns(_fake_trajectory(tmp_path)):
+        before = apply_gates(tt.transcript, tt.turn, user_tools=user_tools.get(tt.domain, set()))
+        prompt, response = render_example(tt)
+        after = apply_gates(
+            parse_transcript(prompt, strict=False),
+            parse_response(response, strict=False),
+            user_tools=user_tools.get(tt.domain, set()),
+        )
+        assert sorted(before.names) == sorted(after.names)
+
+
+def test_user_calls_are_not_treated_as_agent_turns(tmp_path):
+    """Ходы, где вызов сделал пользователь, в корпус агента попадать не должны."""
+    p = tmp_path / "u.json"
+    data = _json.loads(_fake_trajectory(tmp_path).read_text(encoding="utf-8"))
+    data["simulations"][0]["messages"][4]["tool_calls"][0]["requestor"] = "user"
+    p.write_text(_json.dumps(data), encoding="utf-8")
+    names = [tt.turn_idx for tt in iter_turns(p)]
+    assert 4 not in names

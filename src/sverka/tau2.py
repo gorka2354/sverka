@@ -196,6 +196,61 @@ def _build_transcript(
     )
 
 
+def render_tool_schema(schema: ToolSchema) -> str:
+    """Схема одного инструмента в том виде, в каком её печатают организаторы.
+
+    Формат восстановлен по выданному сэмплу: `!` после типа означает обязательность,
+    `[enum: a|b]` — допустимые значения, вложенное поле помечено `·` и большим отступом.
+    """
+    lines = [f"- {schema.name} — {schema.description}"]
+    for p in schema.params:
+        mark = "!" if p.required else ""
+        enum = f" [enum: {'|'.join(p.enum)}]" if p.enum else ""
+        desc = f" — {p.description}" if p.description else ""
+        indent = "    " if p.depth == 0 else "        · "
+        lines.append(f"{indent}{p.name}: {p.type}{mark}{enum}{desc}")
+    return "\n".join(lines)
+
+
+def render_example(tt: TrajectoryTurn) -> tuple[str, str]:
+    """Ход траектории → пара (prompt, response) в формате организаторов.
+
+    Нужно, чтобы собранный корпус проходил ровно через тот же парсер, что и боевые данные:
+    иначе корпус проверял бы не то решение, которое поедет в сабмит. Круговая проверка
+    «отрендерили → разобрали → получили те же вызовы» держит эти два формата вместе.
+    """
+    tr = tt.transcript
+    tools_block = "\n".join(render_tool_schema(s) for _, s in sorted(tr.tools.items()))
+    parts = [
+        "⟦SYSTEM⟧",
+        "<instructions>\nYou are a customer service agent that helps the user according to "
+        "the <policy> provided below.\n</instructions>",
+        f"<policy>\n{tr.policy}\n</policy>",
+        f"[AVAILABLE TOOLS]\n{tools_block}",
+    ]
+
+    for t in tr.turns:
+        if t.role == "SYSTEM":
+            continue
+        head = "⟦USER⟧" if t.role == USER else (
+            f"⟦ASSISTANT · ход {t.number}⟧" if t.number is not None else "⟦ASSISTANT⟧"
+        )
+        body = [t.text.strip()] if (t.text or "").strip() else []
+        for c in t.tool_calls:
+            body.append(f"\t→ TOOL_CALL {c.name}: {c.raw}")
+        for name, res in t.tool_responses:
+            body.append(f"\t← TOOL_RESPONSE {name}: {res}")
+        parts.append(head + ("\n" + "\n".join(body) if body else ""))
+
+    resp_body = [tt.turn.text.strip()] if (tt.turn.text or "").strip() else []
+    for c in tt.turn.tool_calls:
+        resp_body.append(f"\t→ TOOL_CALL {c.name}: {c.raw}")
+    response = f"⟦ASSISTANT · ход {tt.turn_idx}⟧" + (
+        "\n" + "\n".join(resp_body) if resp_body else ""
+    )
+    return "\n\n".join(parts), response
+
+
 def iter_turns(
     path: str | Path,
     *,
