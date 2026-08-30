@@ -74,13 +74,33 @@ def вид_провала(обоснование: str) -> str:
     return "не_сделал" if _НЕ_СДЕЛАЛ.search(обоснование or "") else "сказал_неверное"
 
 
-def собрать(файл: Path) -> list[dict]:
-    """Кандидаты из одного файла траекторий."""
+def собрать(файл: Path, *, met: bool = False) -> list[dict]:
+    """Ходы, к которым привязывается ассершен с заданным исходом.
+
+    `met=False` — провалившиеся требования, кандидаты в положительные.
+    `met=True` — ВЫПОЛНЕННЫЕ требования из решённых симуляций. Это негативный контроль
+    для ручной разметки, и он обязателен `[инцидент 31.08.2026]`: первая контрольная группа
+    строилась делением провалов на «сказал неверное» и «не сделал» по формулировке
+    обоснования, и деление оказалось неверным — бенчмарк пишет «did not communicate X»
+    и там, где агент вместо X сообщил ошибочное Y, то есть в случае прямой галлюцинации.
+    Разметчики это разглядели, а ключ — нет. Честный контроль может быть только один:
+    ход, где требование ВЫПОЛНЕНО и симуляция решена.
+    """
     данные = json.loads(файл.read_text(encoding="utf-8"))
     провалы: dict[int, list[dict]] = {}
     for i, s in enumerate(данные.get("simulations") or []):
-        плохие = [a for a in ((s.get("reward_info") or {}).get("nl_assertions") or [])
-                  if a.get("met") is False]
+        ri = s.get("reward_info") or {}
+        ассершены = ri.get("nl_assertions") or []
+        if met:
+            # Контроль обязан быть чистым по всем признакам разом: задача решена, база
+            # сошлась, ни одного проваленного требования.
+            if float(ri.get("reward") or 0) != 1.0:
+                continue
+            if any(a.get("met") is False for a in ассершены):
+                continue
+            плохие = [a for a in ассершены if a.get("met") is True]
+        else:
+            плохие = [a for a in ассершены if a.get("met") is False]
         if плохие:
             провалы[i] = плохие
     if not провалы:
@@ -118,6 +138,7 @@ def собрать(файл: Path) -> list[dict]:
                 "ассершен": a.get("nl_assertion") or "",
                 "обоснование": a.get("justification") or "",
                 "вид_провала": вид_провала(a.get("justification") or ""),
+                "met": bool(a.get("met")),
                 "якорей": len(як),
                 "источник": файл.name,
                 "sim_index": sim_index,
@@ -131,6 +152,8 @@ def main() -> int:
     ap.add_argument("--data", default="~/sverka/tau2/data")
     ap.add_argument("--out", default="data/nl_candidates.jsonl")
     ap.add_argument("--limit-files", type=int, default=0)
+    ap.add_argument("--met", action="store_true",
+                    help="собрать ВЫПОЛНЕННЫЕ требования решённых симуляций — негативный контроль")
     args = ap.parse_args()
 
     файлы = sorted(Path(args.data).expanduser().glob("*.json"))
@@ -141,7 +164,7 @@ def main() -> int:
     всего: list[dict] = []
     for i, f in enumerate(файлы, 1):
         try:
-            к = собрать(f)
+            к = собрать(f, met=args.met)
         except Exception as e:  # noqa: BLE001
             print(f"[{i}/{len(файлы)}] {f.name}: ОШИБКА {type(e).__name__}: {e}",
                   file=sys.stderr, flush=True)

@@ -65,6 +65,8 @@ def срез_контекста(prompt: str, response: str, предел: int = 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="вход", default="data/nl_candidates.jsonl")
+    ap.add_argument("--чистые", default="data/nl_clean.jsonl",
+                    help="выполненные требования решённых симуляций — негативный контроль")
     ap.add_argument("--out", default="data/markup_cards.json")
     ap.add_argument("--n", type=int, default=50)
     ap.add_argument("--контроль", type=int, default=10,
@@ -73,13 +75,13 @@ def main() -> int:
 
     строки = [json.loads(s) for s in
               Path(args.вход).read_text(encoding="utf-8").splitlines() if s.strip()]
-    основа = [r for r in строки if r["вид_провала"] == "сказал_неверное"]
-    контроль = [r for r in строки if r["вид_провала"] == "не_сделал"]
+    чистые = [json.loads(s) for s in
+              Path(args.чистые).read_text(encoding="utf-8").splitlines() if s.strip()]
 
     rnd = random.Random(СИД)
-    rnd.shuffle(основа)
-    rnd.shuffle(контроль)
-    взято = основа[: args.n - args.контроль] + контроль[: args.контроль]
+    rnd.shuffle(строки)
+    rnd.shuffle(чистые)
+    взято = строки[: args.n - args.контроль] + чистые[: args.контроль]
     rnd.shuffle(взято)
 
     карточки = []
@@ -98,19 +100,21 @@ def main() -> int:
             "запрос": запрос,
             "ответ": (turn.text or r["response"]).strip(),
             "срез": срез_контекста(r["prompt"], r["response"]),
-            "ассершен": r["ассершен"],
-            "обоснование": r["обоснование"],
-            # вид провала в карточку НЕ кладём: он и есть предмет слепой проверки
-            "_вид": r["вид_провала"],
+            "требование": r["ассершен"],
+            # Обоснование ревьюера в карточку НЕ идёт: у выполненного требования оно
+            # начинается с «The agent did ...», и контроль выдал бы себя первой строкой.
+            # Флаг met — тем более: он и есть предмет слепой проверки.
+            "_met": bool(r.get("met")),
         })
 
     out = Path(args.out)
     out.write_text(json.dumps(карточки, ensure_ascii=False, indent=1), encoding="utf-8")
     ключ = out.with_name(out.stem + "_ключ.json")
-    ключ.write_text(json.dumps({к["n"]: к["_вид"] for к in карточки}, ensure_ascii=False,
-                               indent=1), encoding="utf-8")
+    ключ.write_text(json.dumps({к["n"]: ("чистая" if к["_met"] else "кандидат")
+                                for к in карточки}, ensure_ascii=False, indent=1),
+                    encoding="utf-8")
     for к in карточки:
-        к.pop("_вид", None)
+        к.pop("_met", None)
     out.write_text(json.dumps(карточки, ensure_ascii=False, indent=1), encoding="utf-8")
 
     print(f"карточек: {len(карточки)} → {out}  ({out.stat().st_size // 1024} КБ)")
