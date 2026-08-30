@@ -32,13 +32,12 @@ import argparse
 import json
 import statistics
 import sys
-import time
 import urllib.error
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sverka import ollama  # noqa: E402
 from sverka.judge import parse_verdict, выбрать_порог, предсказать_метрики  # noqa: E402
 from sverka.judge_prompt import JSON_SCHEMA, build_prompt  # noqa: E402
 from sverka.transcript import parse_response, parse_transcript  # noqa: E402
@@ -63,27 +62,21 @@ def очистить(текст: str) -> str:
     return (текст or "").encode("utf-8", "surrogatepass").decode("utf-8", "replace")
 
 
-def спросить(host: str, model: str, system: str, user: str, timeout: int) -> tuple[str, float]:
+def спросить(host: str, model: str, system: str, user: str, timeout: int,
+             num_ctx: int) -> tuple[str, float, int, bool]:
     """Один запрос к ollama с принудительной схемой ответа.
 
     `think: false` обязателен: `[инцидент]` у рассуждающих моделей вся квота вывода уходит
     в рассуждение, и поле ответа приходит пустым. Ошибка тихая — выглядит как отказ модели.
+
+    Окно и доставку промпта стережёт `sverka.ollama`: судья, которому дают пятнадцать тысяч
+    токенов контекста, при забытом `num_ctx` читал последние две тысячи, и мерился тогда
+    не судья, а обрезка `[замер 31.08.2026]`.
     """
-    тело = json.dumps({
-        "model": model,
-        "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": user}],
-        "stream": False,
-        "think": False,
-        "format": JSON_SCHEMA,
-        "options": {"temperature": 0.0, "num_predict": 900},  # `[замер v3]` при 400 не влезали 4 ответа из 46
-    }).encode("utf-8")
-    req = urllib.request.Request(f"{host}/api/chat", data=тело,
-                                 headers={"Content-Type": "application/json"})
-    t0 = time.time()
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        ответ = json.loads(r.read().decode("utf-8"))
-    return очистить(ответ.get("message", {}).get("content", "")), time.time() - t0
+    о = ollama.спросить(host, model, system, user, num_ctx=num_ctx, формат=JSON_SCHEMA,
+                        # `[замер v3]` при 400 не влезали 4 ответа из 46
+                        num_predict=900, думать=False, timeout=timeout)
+    return очистить(о.текст), о.секунд, о.дошло, о.вывод_оборван
 
 
 def main() -> int:
@@ -93,6 +86,8 @@ def main() -> int:
     ap.add_argument("--data", default="data/raw/valid.parquet")
     ap.add_argument("--out", default="data/judge_sanity.jsonl")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--num-ctx", type=int, default=32768,
+                    help="окно модели; обязано вмещать промпт целиком, иначе ollama режет молча")
     ap.add_argument("--timeout", type=int, default=600)
     args = ap.parse_args()
 
@@ -117,11 +112,29 @@ def main() -> int:
     if out.exists():
         # Прогон на CPU идёт около минуты на пример, поэтому он обязан продолжаться
         # с места обрыва, а не начинаться заново.
+        #
+        # ⚠️ Но продолжать можно ТОЛЬКО прогон с теми же условиями. `[ревью 31.08.2026]`
+        # Прежняя редакция набирала `сделано` по одному лишь `id`, и запуск на файле
+        # от 30.08 не делал НИ ОДНОГО обращения к модели, после чего печатал отчёт
+        # по отозванным строкам как по свежему замеру — воспроизведено на мёртвом хосте.
+        чужие = 0
         for строка in out.read_text(encoding="utf-8").splitlines():
             try:
-                сделано.add(json.loads(строка)["id"])
+                z = json.loads(строка)
             except Exception:  # noqa: BLE001
-                pass
+                continue
+            свои = (z.get("модель") == args.model and z.get("окно") == args.num_ctx
+                    and "дошло_токенов" in z)
+            if свои:
+                сделано.add(z["id"])
+            else:
+                чужие += 1
+        if чужие:
+            print(f"[ОТКАЗ] в {out} лежат {чужие} строк от прогона с другими условиями "
+                  f"(другая модель, другое окно или прогон до 31.08.2026). Продолжать нельзя: "
+                  f"смешанный файл читается как один замер. Возьмите новый --out.",
+                  file=sys.stderr, flush=True)
+            return 2
         print(f"[возобновление] уже готово: {len(сделано)}", file=sys.stderr, flush=True)
 
     with out.open("a", encoding="utf-8") as f:
@@ -132,10 +145,18 @@ def main() -> int:
             turn = parse_response(r["response"], strict=False)
             п = build_prompt(tr, turn)
             try:
-                текст, сек = спросить(args.host, args.model, п.system, п.user, args.timeout)
+                текст, сек, дошло, оборван = спросить(args.host, args.model, п.system,
+                                                      п.user, args.timeout, args.num_ctx)
                 ошибка = ""
             except (urllib.error.URLError, TimeoutError, OSError) as e:
-                текст, сек, ошибка = "", 0.0, f"{type(e).__name__}: {e}"
+                текст, сек, дошло, оборван = "", 0.0, 0, False
+                ошибка = f"{type(e).__name__}: {e}"
+            except ollama.ВходОбрезан as e:
+                # Не роняем прогон целиком: строка помечается недействительной и в отчёте
+                # считается отдельно. Потерять сорок минут работы из-за одного длинного
+                # промпта — худший размен, чем честно отметить его непригодным.
+                текст, сек, дошло, оборван = "", 0.0, 0, False
+                ошибка = f"ВходОбрезан: {e}"
             v = parse_verdict(текст)
             f.write(json.dumps({
                 "id": r["id"], "label": int(r["label"]),
@@ -147,6 +168,12 @@ def main() -> int:
                            for c in v.checks if isinstance(c, dict)],
                 "finding": очистить(v.finding)[:300], "evidence": очистить(v.evidence)[:300],
                 "усечено": п.truncated, "токенов": п.approx_tokens,
+                # Сколько токенов модель прочитала НА САМОМ ДЕЛЕ. Расхождение с «токенов»
+                # означает молчаливую обрезку на стороне ollama, а не на нашей.
+                "дошло_токенов": дошло,
+                # Условия замера — в каждой строке, чтобы дозапись не смешала два прогона
+                # и чтобы отчёт нельзя было прочитать в отрыве от того, чем он получен.
+                "модель": args.model, "окно": args.num_ctx, "вывод_оборван": оборван,
                 "секунд": round(сек, 1), "ошибка": ошибка,
             }, ensure_ascii=False) + "\n")
             f.flush()
@@ -171,6 +198,22 @@ def отчёт(path: Path) -> None:
                if чистые_текстовые else float("nan"))
 
     print(f"\n{'='*78}\nСАНИТИ-ПРОГОН: {len(строки)} примеров\n{'='*78}")
+
+    # Доставка проверяется ПЕРВОЙ и до всех метрик: отчёт по строкам, где вход не доехал
+    # или вывод оборвался, описывает не судью, а канал. `[инцидент 31.08.2026]`
+    обрезан_вход = sum("ВходОбрезан" in str(s.get("ошибка", "")) for s in строки)
+    оборван = sum(bool(s.get("вывод_оборван")) for s in строки)
+    дошли = [s.get("дошло_токенов") or 0 for s in строки if s.get("дошло_токенов")]
+    окна = {s.get("окно") for s in строки if s.get("окно")}
+    модели = {s.get("модель") for s in строки if s.get("модель")}
+    print(f"  условия: модель {' + '.join(sorted(map(str, модели))) or 'не записана'}, "
+          f"окно {' + '.join(map(str, sorted(окна))) or 'не записано'}")
+    if дошли:
+        print(f"  доставка: прочитано токенов медиана {int(statistics.median(дошли))}, "
+              f"максимум {max(дошли)}")
+    if обрезан_вход or оборван:
+        print(f"  ⚠ НЕДЕЙСТВИТЕЛЬНЫХ СТРОК: вход обрезан у {обрезан_вход}, "
+              f"вывод оборван у {оборван} — эти строки меряют канал, а не судью")
     факт = {"доля_неразобранных": неразобрано, "межквартильный_размах": размах,
             "доля_суровых_на_чистых": суровые}
     все_ок = True

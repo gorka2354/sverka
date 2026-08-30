@@ -25,13 +25,12 @@ import argparse
 import collections
 import json
 import sys
-import time
 import urllib.error
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sverka import ollama  # noqa: E402
 from sverka.ask import SCHEMA, проверить, собрать  # noqa: E402
 from sverka.slices import отобрать  # noqa: E402
 from sverka.units import извлечь, есть_в_тексте  # noqa: E402
@@ -47,26 +46,17 @@ from sverka.units import извлечь, есть_в_тексте  # noqa: E402
 }
 
 
-def спросить(host, model, system, user, timeout, думать):
-    тело = {"model": model,
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-            "stream": False, "format": SCHEMA,
-            "options": {"temperature": 0.0, "num_predict": 200}}
-    # `think` кладётся в запрос ТОЛЬКО когда его просят выключить. `[замер 30.08.2026]`
-    # На qwen3.5 без него ответ пустой, на gpt-oss:20b — пустой ИМЕННО с ним. Универсального
-    # значения нет, поэтому это аргумент, а не константа.
-    if not думать:
-        тело["think"] = False
-    req = urllib.request.Request(f"{host}/api/chat",
-                                 data=json.dumps(тело).encode("utf-8"),
-                                 headers={"Content-Type": "application/json"})
-    t0 = time.time()
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        о = json.loads(r.read().decode("utf-8"))
-    текст = (о.get("message", {}).get("content", "") or "")
-    текст = текст.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
-    return текст, time.time() - t0
+def спросить(host, model, system, user, timeout, думать, num_ctx):
+    """Обёртка над общим клиентом: он же и стережёт доставку промпта.
+
+    `думать` здесь — «НЕ выключать рассуждение», поэтому в клиент уходит инверсия: поле
+    `think` кладётся только когда его просят выключить. `[замер 30.08.2026]` На qwen3.5 без
+    выключения ответ пустой, на gpt-oss:20b — пустой ИМЕННО с выключением.
+    """
+    о = ollama.спросить(host, model, system, user, num_ctx=num_ctx, формат=SCHEMA,
+                        num_predict=200, думать=None if думать else False,
+                        timeout=timeout)
+    return о.текст, о.секунд, о.дошло
 
 
 def собрать_задания(valid, corpus, предел_корпуса):
@@ -99,6 +89,8 @@ def main() -> int:
     ap.add_argument("--corpus-limit", type=int, default=25)
     ap.add_argument("--limit", type=int, default=150)
     ap.add_argument("--out", default="data/cloze_clean.jsonl")
+    ap.add_argument("--num-ctx", type=int, default=16384,
+                    help="окно модели; p90 наших срезов ~6 000 токенов, запас на схему и вопрос")
     ap.add_argument("--timeout", type=int, default=300)
     args = ap.parse_args()
 
@@ -121,22 +113,53 @@ def main() -> int:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", encoding="utf-8") as f:
+    # Дозапись, а не перезапись: прогон идёт десятки минут, и обрыв не должен обнулять
+    # сделанное. Ключ строки — язык, вид, истина и длина среза; условия замера пишутся
+    # в каждую строку, чтобы дозапись не смешала два разных прогона в один файл.
+    сделано = set()
+    if out.exists():
+        чужие = 0
+        for строка in out.read_text(encoding="utf-8").splitlines():
+            try:
+                z = json.loads(строка)
+            except Exception:  # noqa: BLE001
+                continue
+            if z.get("модель") == args.model and z.get("окно") == args.num_ctx:
+                сделано.add((z["язык"], z["вид"], z["истина"], z["срез_симв"]))
+            else:
+                чужие += 1
+        if чужие:
+            print(f"[ОТКАЗ] в {out} лежат {чужие} строк от прогона с другими условиями. "
+                  f"Смешанный файл читается как один замер — возьмите новый --out.",
+                  file=sys.stderr, flush=True)
+            return 2
+        print(f"[возобновление] уже готово: {len(сделано)}", file=sys.stderr, flush=True)
+
+    with out.open("a", encoding="utf-8") as f:
         for i, (язык, ед, срез) in enumerate(перемешано, 1):
+            if (язык, ед.вид, ед.значение, срез.символов) in сделано:
+                continue
             в = собрать(ед, срез.текст())
             try:
-                текст, сек = спросить(args.host, args.model, в.system, в.user,
-                                      args.timeout, args.think)
+                текст, сек, токенов = спросить(args.host, args.model, в.system, в.user,
+                                               args.timeout, args.think, args.num_ctx)
                 ответ = json.loads(текст) if текст.strip().startswith("{") else {}
                 исход = проверить(ответ, в)
                 ошибка = ""
             except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
-                ответ, исход, сек, ошибка = {}, "непроверяемо", 0.0, type(e).__name__
+                ответ, исход, сек, ошибка, токенов = {}, "непроверяемо", 0.0, type(e).__name__, 0
+            except ollama.ВходОбрезан as e:
+                # Строка помечается недействительной, прогон продолжается: отдельная
+                # длинная единица не должна стоить сорока минут работы.
+                ответ, исход, сек, токенов = {}, "непроверяемо", 0.0, 0
+                ошибка = f"ВходОбрезан: {e}"
             f.write(json.dumps({
                 "язык": язык, "вид": ед.вид, "истина": ед.значение,
                 "исход": исход, "ответ": ответ.get("значение", ""),
                 "цитата": str(ответ.get("цитата", ""))[:200],
-                "срез_симв": срез.символов, "секунд": round(сек, 1), "ошибка": ошибка,
+                "срез_симв": срез.символов, "промпт_токенов": токенов,
+                "модель": args.model, "окно": args.num_ctx,
+                "секунд": round(сек, 1), "ошибка": ошибка,
             }, ensure_ascii=False) + "\n")
             f.flush()
             print(f"[{i}/{len(перемешано)}] {язык} {ед.вид:<13} истина={ед.значение[:18]:<18} "
@@ -151,6 +174,13 @@ def отчёт(path: Path) -> None:
     if not строки:
         print("пусто"); return
     print(f"\n{'='*84}\nСЛЕПОЕ ЗАПОЛНЕНИЕ ПРОПУСКА: {len(строки)} вопросов\n{'='*84}")
+    # Доставка входа проверяется ДО исходов: замер, где промпт обрезан, меряет обрезку.
+    токены = [x.get("промпт_токенов", 0) for x in строки if x.get("промпт_токенов")]
+    if токены:
+        симв = [x["срез_симв"] for x in строки if x.get("промпт_токенов")]
+        подозрительных = sum(1 for т, с in zip(токены, симв) if т * 4.5 < с)
+        print(f"\n  доставка входа: промпт-токенов медиана {sorted(токены)[len(токены)//2]}, "
+              f"максимум {max(токены)}; подозрение на обрезку у {подозрительных} из {len(токены)}")
     for язык in ("RU", "EN", "все"):
         гр = строки if язык == "все" else [x for x in строки if x["язык"] == язык]
         if not гр:
