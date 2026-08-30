@@ -20,3 +20,6 @@ dist/
 submissions/
 *.tar.gz
 *.zip
+
+# служебный каталог браузерного MCP, к решению отношения не имеет
+.playwright-mcp/
