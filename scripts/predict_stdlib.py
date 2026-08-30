@@ -35,6 +35,15 @@ import time
 # профиле ставится единица везде, то есть худший случай — балл-пол, а не мусор.
 PROFILE = "all_ones"
 
+# Формат файла предсказаний. `[измерено 30.08.2026]` Платформа читает выход как parquet,
+# хотя аргумент называется `predictions.csv`: одиннадцать прогонов с текстовым CSV были
+# отклонены на шаге расчёта метрик, та же сборка с parquet прошла конвейер целиком.
+#
+# Отсюда же снимается прежнее «без единой зависимости» из докстринга выше: pandas нужен
+# теперь и на запись. Но он по-прежнему НЕ объявляется, а берётся из образа платформы —
+# что он там есть, измерено чтением parquet на боевом прогоне.
+OUTPUT_FORMAT = "parquet"
+
 FALLBACK_LABEL = 1
 BUDGET_SECONDS = 24 * 60  # лимит платформы 30 минут; сторожим с запасом
 
@@ -159,10 +168,19 @@ def main() -> int:
         d = os.path.dirname(os.path.abspath(args.output))
         if d:
             os.makedirs(d, exist_ok=True)
-        with open(args.output, "w", encoding="utf-8", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["id", "label"])
-            w.writerows(out_rows)
+        врем = os.path.abspath(args.output) + ".part"
+        if OUTPUT_FORMAT == "parquet":
+            import pandas as pd
+            вых = pd.DataFrame({"id": [a for a, _ in out_rows],
+                                "label": [b for _, b in out_rows]})
+            вых["label"] = вых["label"].astype("int64")
+            вых.to_parquet(врем, index=False)
+        else:
+            with open(врем, "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f, lineterminator="\n")
+                w.writerow(["id", "label"])
+                w.writerows(out_rows)
+        os.replace(врем, os.path.abspath(args.output))
 
     dt = time.time() - t0
     print(f"[sverka] готово за {dt:.1f} c, записано {len(out_rows)}, единиц {ones} "
