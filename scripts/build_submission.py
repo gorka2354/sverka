@@ -225,6 +225,15 @@ SETUP_PY_LEGACY = SETUP_PY_HOOK.replace(
 # теряет смысл. Вторым — `internet`: он один способен закрыть весь вопрос о вендоринге.
 # Дальше по убыванию цены ошибки.
 PROBE_QUESTIONS = (
+    # ── Вопросы о САМОМ ТЕСТОВОМ НАБОРЕ. Добавлены 31.08.2026, когда выяснилось, что
+    # выданный сэмпл врёт уже по четырём признакам, а свойства входа от меток не зависят
+    # и потому покупаются бесплатно отказным прогоном. Порядок — по цене ошибки.
+    "parse_health",       # здоров ли разбор транскрипта на боевом файле (≥0.95)
+    "units_heavy",        # доля ответов текстовой страты с ≥3 единицами > 0.30
+    "median_len_gt_500",  # медиана длины ответа > 500 символов
+    "n_gt_800",           # строк в наборе больше 800
+    "tool_gt_200",        # строк с вызовом инструмента больше 200
+    # ── Вопросы об образе платформы.
     "package_installed",  # выполняется ли `pip install .` успешно
     "internet",           # есть ли сеть в контейнере
     "torch",              # torch в образе
@@ -360,9 +369,16 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         text = entry.read_text(encoding="utf-8")
         assert 'PROBE_QUESTION = "none"' in text, "не найдена константа вопроса"
         assert question in PROBE_QUESTIONS, f"неизвестный вопрос: {question}"
-        # Опросник пишет выход в parquet: это текущая рабочая гипотеза о формате,
-        # и менять её заодно с вопросом нельзя — иначе ответ станет неоднозначным.
-        text = text.replace('OUTPUT_FORMAT = "csv"', 'OUTPUT_FORMAT = "parquet"')
+        # ⚠️ Опросник пишет выход ТЕКСТОВЫМ CSV, и это не пережиток, а условие бесплатности
+        # канала. `[изменено 31.08.2026]` Прежняя редакция ставила здесь parquet, потому что
+        # формат выхода был рабочей гипотезой. Гипотеза подтвердилась: платформа читает
+        # parquet и засчитывает такой прогон. Значит опросник с parquet-выходом при ответе
+        # «да» (код 0) завершился бы УСПЕШНО и съел невозвратный слот — то есть ровно то,
+        # ради чего опросник и существует, перестало бы работать.
+        #
+        # С текстовым CSV оба исхода — отказ: «да» уводит на шаг 22 (выход не сопоставился
+        # с эталоном), «нет» на шаг 08 (ненулевой код). Один бит за прогон, ноль слотов.
+        assert 'OUTPUT_FORMAT = "csv"' in text, "формат выхода опросника обязан остаться csv"
         entry.write_text(text.replace('PROBE_QUESTION = "none"',
                                       f'PROBE_QUESTION = "{question}"'),
                          encoding="utf-8", newline="\n")
@@ -380,7 +396,7 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         entry.write_text(text.replace('PROFILE = "all_ones"', f'PROFILE = "{profile}"'),
                          encoding="utf-8", newline="\n")
     if packaging == "pep517":
-        pj = PYPROJECT_PACKAGE if profile in ("gate", "otvod", "no_units") else PYPROJECT_DIAGNOSTIC
+        pj = PYPROJECT_PACKAGE if profile in ("gate", "otvod", "no_units", "probe") else PYPROJECT_DIAGNOSTIC
         (out_dir / "pyproject.toml").write_text(pj, encoding="utf-8", newline="\n")
         (out_dir / "setup.py").write_text(SETUP_PY_HOOK, encoding="utf-8", newline="\n")
     else:
@@ -388,7 +404,7 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         # а не из индекса. Это единственный способ обойти build isolation, когда флаги
         # установки нам передать некуда: платформа выполняет голое `pip install .`.
         (out_dir / "setup.py").write_text(SETUP_PY_LEGACY, encoding="utf-8", newline="\n")
-    if profile in ("gate", "otvod", "no_units"):
+    if profile in ("gate", "otvod", "no_units", "probe"):
         # Настоящий пакет: гейтам нужны transcript, gates, schema_check и схемы
         # инструментов, отводу — otvod, units, transcript. `__pycache__` и `data.py`
         # исключены — первое мусор, второе единственный модуль, тянущий pandas
