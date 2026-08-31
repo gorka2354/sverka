@@ -301,6 +301,9 @@ PROFILE_ENTRY = {
     # Требует пакета sverka в архиве (otvod → units, transcript), но ни одной сторонней
     # библиотеки: проверено обходом sys.modules — не-stdlib импортов ноль.
     "otvod": "scripts/predict_stdlib.py",
+    # Измерительный сабмит: одно условие «нечего проверять». Возвращает долю положительных
+    # среди ответов без единиц на БОЕВЫХ данных — ставку, на которой стоят все конструкции.
+    "no_units": "scripts/predict_stdlib.py",
 }
 
 
@@ -377,7 +380,7 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         entry.write_text(text.replace('PROFILE = "all_ones"', f'PROFILE = "{profile}"'),
                          encoding="utf-8", newline="\n")
     if packaging == "pep517":
-        pj = PYPROJECT_PACKAGE if profile in ("gate", "otvod") else PYPROJECT_DIAGNOSTIC
+        pj = PYPROJECT_PACKAGE if profile in ("gate", "otvod", "no_units") else PYPROJECT_DIAGNOSTIC
         (out_dir / "pyproject.toml").write_text(pj, encoding="utf-8", newline="\n")
         (out_dir / "setup.py").write_text(SETUP_PY_HOOK, encoding="utf-8", newline="\n")
     else:
@@ -385,7 +388,7 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         # а не из индекса. Это единственный способ обойти build isolation, когда флаги
         # установки нам передать некуда: платформа выполняет голое `pip install .`.
         (out_dir / "setup.py").write_text(SETUP_PY_LEGACY, encoding="utf-8", newline="\n")
-    if profile in ("gate", "otvod"):
+    if profile in ("gate", "otvod", "no_units"):
         # Настоящий пакет: гейтам нужны transcript, gates, schema_check и схемы
         # инструментов, отводу — otvod, units, transcript. `__pycache__` и `data.py`
         # исключены — первое мусор, второе единственный модуль, тянущий pandas
@@ -411,7 +414,7 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
 # Профили, которые собираются ради отправки. Только для них имеет смысл требовать, чтобы
 # точка входа отработала на реальном сэмпле: `broken` намеренно без точки входа, а `minimal`
 # — историческая проба, читающая исключительно UTF-8, и на parquet она обязана падать.
-SUBMITTABLE = ("diagnostic", "all_ones", "has_tool_call", "otvod", "strict", "noheader",
+SUBMITTABLE = ("diagnostic", "all_ones", "has_tool_call", "otvod", "no_units", "strict", "noheader",
                "parquet_out", "probe", "gate")
 
 
@@ -548,7 +551,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", default="diagnostic",
                     choices=["broken", "minimal", "diagnostic", "diagnostic_scored", "all_ones",
-                             "has_tool_call", "otvod", "strict", "noheader",
+                             "has_tool_call", "otvod", "no_units", "strict", "noheader",
                              "parquet_out", "probe", "gate"])
     ap.add_argument("--out", default=None, help="куда собирать (по умолчанию submissions/<profile>)")
     ap.add_argument("--archive", action="store_true", help="дополнительно упаковать архив")
