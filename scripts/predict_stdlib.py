@@ -122,7 +122,40 @@ def decide(row: dict, profile: str) -> int:
         # наличие подстроки, а не разбор: цель сабмита — измерить перенос артефакта,
         # и любая наша доработка правила смазала бы ответ.
         return 1 if "TOOL_CALL" in (row.get("response") or "") else 0
+    if profile == "otvod":
+        # Перевёрнутая метка: единица по умолчанию, ноль — только там, где ответ заведомо
+        # безобиден (нет вызова, нет проверяемых единиц, нет заявленной невозможности).
+        # `[замер 31.08.2026]` r1/r0 = 0.058 при критерии выгодности 0.692; на настоящих
+        # метках valid отведено 12 строк из 46 и все двенадцать — верно, полнота 1.000.
+        # Проекция на боевые страты F1 ≈ 0.498 против пола 0.393.
+        from sverka.otvod import отвод
+        return 0 if отвод(row.get("response") or "").отвести else 1
     return FALLBACK_LABEL
+
+
+def записать(путь: str, строки: list[tuple[str, int]]) -> None:
+    """Атомарная запись предсказаний. Зовётся дважды: сперва полом, потом результатом.
+
+    Запись идёт во временный файл и переименовывается на месте. `[среда платформы]`
+    в логе боевого прогона видны префиксы рангов от mpirun, то есть точка входа может
+    исполняться несколькими процессами; при обычной записи они наложились бы друг на друга
+    и дали обрезанный файл, а `os.replace` атомарен.
+    """
+    d = os.path.dirname(os.path.abspath(путь))
+    if d:
+        os.makedirs(d, exist_ok=True)
+    врем = os.path.abspath(путь) + f".part{os.getpid()}"
+    if OUTPUT_FORMAT == "parquet":
+        import pandas as pd
+        вых = pd.DataFrame({"id": [a for a, _ in строки], "label": [b for _, b in строки]})
+        вых["label"] = вых["label"].astype("int64")
+        вых.to_parquet(врем, index=False)
+    else:
+        with open(врем, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f, lineterminator="\n")
+            w.writerow(["id", "label"])
+            w.writerows(строки)
+    os.replace(врем, os.path.abspath(путь))
 
 
 def main() -> int:
@@ -146,6 +179,23 @@ def main() -> int:
           file=sys.stderr, flush=True)
 
     id_col = "id" if "id" in cols else (cols[0] if cols else "id")
+
+    # ⚠️ Пол пишется НА ДИСК ДО любой содержательной работы. `[измерено]` все одиннадцать
+    # отклонённых прогонов были отклонены конвейером, ни один — содержанием предсказаний,
+    # то есть цена отсутствия валидного файла — потерянный невозвратный слот, а цена
+    # неидеальных меток — несколько сотых F1. Файл из одних единиц даёт 0.393; дальше он
+    # переписывается уточнёнными метками, и любое падение, зависание или убийство по времени
+    # оставляет на диске рабочий результат, а не пустоту.
+    if args.output and rows:
+        try:
+            записать(args.output, [(str(r.get(id_col, f"row_{i}")), 1)
+                                   for i, r in enumerate(rows)])
+            print(f"[sverka] пол записан: {len(rows)} строк с меткой 1", file=sys.stderr,
+                  flush=True)
+        except Exception as e:  # noqa: BLE001 — падать нельзя даже здесь
+            print(f"[sverka] не удалось записать пол: {type(e).__name__}: {e}",
+                  file=sys.stderr, flush=True)
+
     out_rows: list[tuple[str, int]] = []
     ones = 0
     for i, r in enumerate(rows):
@@ -165,22 +215,7 @@ def main() -> int:
         out_rows.append((str(r.get(id_col, f"row_{i}")), label))
 
     if args.output:
-        d = os.path.dirname(os.path.abspath(args.output))
-        if d:
-            os.makedirs(d, exist_ok=True)
-        врем = os.path.abspath(args.output) + ".part"
-        if OUTPUT_FORMAT == "parquet":
-            import pandas as pd
-            вых = pd.DataFrame({"id": [a for a, _ in out_rows],
-                                "label": [b for _, b in out_rows]})
-            вых["label"] = вых["label"].astype("int64")
-            вых.to_parquet(врем, index=False)
-        else:
-            with open(врем, "w", encoding="utf-8", newline="") as f:
-                w = csv.writer(f, lineterminator="\n")
-                w.writerow(["id", "label"])
-                w.writerows(out_rows)
-        os.replace(врем, os.path.abspath(args.output))
+        записать(args.output, out_rows)
 
     dt = time.time() - t0
     print(f"[sverka] готово за {dt:.1f} c, записано {len(out_rows)}, единиц {ones} "
