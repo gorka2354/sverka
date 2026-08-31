@@ -380,6 +380,10 @@ def build_diagnostic(out_dir: Path, profile: str = "diagnostic",
         # С текстовым CSV оба исхода — отказ: «да» уводит на шаг 22 (выход не сопоставился
         # с эталоном), «нет» на шаг 08 (ненулевой код). Один бит за прогон, ноль слотов.
         assert 'OUTPUT_FORMAT = "csv"' in text, "формат выхода опросника обязан остаться csv"
+        # Отчёт по ограниченному сету: лог публикуется только для него, поэтому проверка
+        # здоровья импорта обязана печататься и падать именно там.
+        if question == "report":
+            text = text.replace("ОТЧЁТ_НА_СЭМПЛЕ = False", "ОТЧЁТ_НА_СЭМПЛЕ = True")
         entry.write_text(text.replace('PROBE_QUESTION = "none"',
                                       f'PROBE_QUESTION = "{question}"'),
                          encoding="utf-8", newline="\n")
