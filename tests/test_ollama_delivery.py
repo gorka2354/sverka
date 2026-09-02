@@ -100,6 +100,22 @@ def test_think_false_кладётся_когда_просят(monkeypatch):
     assert п.тело["think"] is False
 
 
+def test_доп_опции_доезжают_до_сервера(monkeypatch):
+    """`num_gpu` нужен для модели больше видеопамяти: без него ollama занимает карту
+    под ноль, и за машиной нельзя работать во время полуторачасового прогона."""
+    п, _ = _вызвать(monkeypatch, num_ctx=8192, доп_опции={"num_gpu": 40})
+    assert п.тело["options"]["num_gpu"] == 40
+    assert п.тело["options"]["num_ctx"] == 8192
+
+
+def test_доп_опции_не_могут_подменить_окно(monkeypatch):
+    """Окно — предмет защиты модуля. Боковой канал, которым его можно перебить, вернул бы
+    ровно ту аварию, ради которой модуль написан `[замер 31.08.2026]`."""
+    п, _ = _вызвать(monkeypatch, num_ctx=16384, доп_опции={"num_ctx": 512, "num_gpu": 10})
+    assert п.тело["options"]["num_ctx"] == 16384
+    assert п.тело["options"]["num_gpu"] == 10
+
+
 def test_схема_уходит_в_format(monkeypatch):
     схема = {"type": "object", "properties": {"значение": {"type": "string"}}}
     п, _ = _вызвать(monkeypatch, num_ctx=8192, формат=схема)

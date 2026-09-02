@@ -101,6 +101,7 @@ def спросить(host: str, model: str, system: str, user: str, *,
              температура: float = 0.0,
              думать: bool | None = None,
              keep_alive: str | None = None,
+             доп_опции: dict | None = None,
              timeout: int = 600,
              строго: bool = True) -> Ответ:
     """Один запрос к ollama.
@@ -112,14 +113,22 @@ def спросить(host: str, model: str, system: str, user: str, *,
 
     `строго=False` возвращает ответ вместе с обрезкой вместо исключения — нужно ровно
     в одном случае: когда обрезка и есть предмет замера.
+
+    `доп_опции` вливаются в `options` ПОСЛЕ обязательных, но перезаписать `num_ctx` не
+    могут: окно — предмет защиты этого модуля, и подменять его сбоку значит вернуть ту
+    самую аварию. Нужны для `num_gpu`, когда модель больше видеопамяти и раскладку слоёв
+    надо задать руками, чтобы машина осталась рабочей во время прогона.
     """
+    опции: dict = {"temperature": температура, "num_predict": num_predict,
+                   "num_ctx": num_ctx}
+    if доп_опции:
+        опции.update({k: v for k, v in доп_опции.items() if k != "num_ctx"})
     тело: dict = {
         "model": model,
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": user}],
         "stream": False,
-        "options": {"temperature": температура, "num_predict": num_predict,
-                    "num_ctx": num_ctx},
+        "options": опции,
     }
     if формат is not None:
         тело["format"] = формат
