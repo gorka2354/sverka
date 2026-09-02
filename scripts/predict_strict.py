@@ -403,6 +403,109 @@ def напечатать_отчёт(rows, cols) -> None:
     except Exception as e:  # noqa: BLE001
         строка("ОТЧЁТ УПАЛ:", type(e).__name__, str(e)[:300])
 
+    напечатать_среду(строка)
+
+
+def напечатать_среду(строка) -> None:
+    """Что за машина под нами. `[пробел найден 01.09.2026]`
+
+    Отчёт печатал только про данные, а про окружение — ничего, хотя именно оно определяет,
+    какую модель вообще можно положить в архив. Заготовленные пробы `torch`, `cuda`, `vllm`,
+    `gpu_h100` собраны 30.08 пакетом за одну минуту и, судя по датам, не отправлялись:
+    ответов нет ни в одном документе, хотя `submissions/ЧИТАТЬ.md` утверждает обратное.
+
+    Каждая такая проба стоит отдельного прогона и приносит один бит. Здесь то же самое
+    достаётся разом и с числами вместо битов: не «torch есть», а его версия, не «это H100»,
+    а её имя и объём памяти. Лог публикуется на шаге «ограниченный сет» `[§0л]`, значит
+    этот вывод будет виден.
+
+    Каждый блок в своём `try`: отсутствие torch — это ОТВЕТ на вопрос, а не повод потерять
+    остальной отчёт.
+    """
+    import os
+    import platform
+
+    try:
+        строка("=== СРЕДА ===")
+        строка("python:", sys.version.split()[0], "|", platform.platform()[:60])
+        строка("исполняемый файл:", sys.executable)
+        строка("рабочий каталог:", os.getcwd())
+        строка("ядер CPU:", os.cpu_count())
+    except Exception as e:  # noqa: BLE001
+        строка("платформа НЕДОСТУПНА:", type(e).__name__)
+
+    # Память машины — от неё зависит, можно ли грузить веса в RAM перед выгрузкой на карту.
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for s in f:
+                if s.startswith(("MemTotal", "MemAvailable")):
+                    строка("RAM:", s.strip())
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Главный вопрос архива: torch в образе или везти его с собой (это 7 ГБ из 40).
+    try:
+        import torch
+        строка("torch:", torch.__version__, "| cuda сборки:", torch.version.cuda)
+        строка("torch.cuda.is_available:", torch.cuda.is_available())
+        if torch.cuda.is_available():
+            строка("устройств:", torch.cuda.device_count())
+            for i in range(torch.cuda.device_count()):
+                п = torch.cuda.get_device_properties(i)
+                строка(f"  GPU{i}:", п.name, "| память ГБ:", round(п.total_memory / 1e9, 1),
+                       "| SM:", f"{п.major}.{п.minor}")
+        else:
+            # Отдельная строка: «torch есть, но карты не видит» и «torch нет» — разные
+            # приговоры, и различить их постфактум будет нечем.
+            строка("⚠ torch есть, но карту НЕ видит — вся линия с локальной моделью мертва")
+    except Exception as e:  # noqa: BLE001
+        строка("torch НЕТ:", type(e).__name__, str(e)[:120])
+
+    for имя in ("vllm", "transformers", "accelerate", "safetensors", "sentencepiece",
+                "huggingface_hub", "numpy", "sklearn"):
+        try:
+            м = __import__(имя)
+            строка(f"  {имя}:", getattr(м, "__version__", "есть, версия неизвестна"))
+        except Exception:  # noqa: BLE001
+            строка(f"  {имя}: НЕТ")
+
+    # nvidia-smi показывает драйвер и занятость карты — то, чего torch не скажет.
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.free,driver_version",
+             "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=20)
+        строка("nvidia-smi:", (r.stdout or r.stderr).strip()[:300] or "пусто")
+    except Exception as e:  # noqa: BLE001
+        строка("nvidia-smi НЕДОСТУПЕН:", type(e).__name__)
+
+    # Место на диске: архив распаковывается сюда же, и если тесно — веса не развернутся.
+    try:
+        import shutil
+        u = shutil.disk_usage(".")
+        строка("диск ГБ: всего", round(u.total / 1e9, 1), "свободно", round(u.free / 1e9, 1))
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Сеть: подтверждена ранее, но проверяется снова — образ мог смениться, а от этого
+    # зависит, можно ли доставить зависимости во время прогона вместо архива.
+    try:
+        import socket
+        socket.create_connection(("pypi.org", 443), timeout=5).close()
+        строка("сеть до pypi: ЕСТЬ")
+    except Exception as e:  # noqa: BLE001
+        строка("сеть до pypi: НЕТ", type(e).__name__)
+
+    # Сколько времени реально даётся. Печатаем момент старта, чтобы по метке в логе
+    # сопоставить с длительностью шага в интерфейсе.
+    try:
+        import time as _t
+        строка("метка времени:", _t.strftime("%Y-%m-%d %H:%M:%S", _t.gmtime()), "UTC")
+    except Exception:  # noqa: BLE001
+        pass
+    строка("=== КОНЕЦ СРЕДЫ ===")
+
 
 def answer_probe(question: str, rows=None, cols=None) -> bool:
     """Ответить на вопрос об образе платформы или о тестовом наборе.
